@@ -112,13 +112,34 @@ Legal Entity Code) in de "2.9 Output"/"2.10 Output"-tabs om elke leaseregel aan
 de juiste PowerHouse te koppelen — dit is dus de schakel die de aantallen in
 "Pivots on 2.10" en "Movement schedule" per PowerHouse correct laat optellen.
 
-**Open vraag**: kan de Power BI-connectie in dit bestand automatisch ververst
-worden (Office Script kan `workbook.getPivotTables()` en reguliere
-querytabellen verversen, maar een live Power BI/Analysis Services-connectie
-kan om interactieve herauthenticatie vragen — te bevestigen of de service
-account/Automate-context hiervoor volstaat), of moet die refresh een aparte
-handmatige stap blijven met alleen de kopieerstap naar "Entity list"
-geautomatiseerd?
+**Getest — directe Power BI-query is momenteel niet mogelijk.** Ik heb geprobeerd
+de "18. Legal Entity Dimension"-tabel rechtstreeks te bevragen via de Power
+BI-connector (DAX-query op dataset BEHOHR-FDP-PRD-FINANCE, workspace
+`54172bbd-89f7-4b7c-a86d-786b11475eef`, report `5764f6b0-e1e1-426e-9417-790422fa6e62`),
+om de tussenliggende Excel-refresh helemaal te kunnen overslaan. Dit gaf
+`ArtifactAccessDenied` (403) — dit account/deze sessie heeft geen toegang tot
+dat specifieke Power BI-rapport via de connector, ook al is er wel toegang tot
+het Excel-bestand met dezelfde onderliggende Power BI-connectie.
+
+**Gekozen aanpak (default) — via het bestaande Excel-bestand**: de
+automatisering ververst `Entity list Power BI - To refresh.xlsx` (Refresh All)
+en kopieert de resulterende tabel naar de "Entity list"-tab, net zoals het
+huidige handmatige proces. Dit vermijdt de afhankelijkheid van directe Power
+BI-API-toegang.
+
+**Toekomstige verbetering (optioneel)**: als iemand met de juiste rechten
+toegang tot dit Power BI-rapport/dataset laat toevoegen voor deze connector
+(of voor de service account die de Power Automate-flow straks draait), kan
+stap 3 in de flow hieronder vervangen worden door een rechtstreekse DAX-query
+— dat elimineert de afhankelijkheid van een los, kwetsbaar Excel-bestand met
+een Power BI-connectie die soms niet ververst.
+
+**Nog wel te bevestigen** (ongeacht welke bron gekozen wordt): kan de Power
+BI-connectie in `Entity list Power BI - To refresh.xlsx` automatisch ververst
+worden binnen een Office Script/Power Automate-context (een live Power
+BI/Analysis Services-connectie kan om interactieve herauthenticatie vragen),
+of blijft die refresh een handmatige stap met alleen de kopieerstap naar
+"Entity list" geautomatiseerd?
 
 ### Tabs "Pivots on 2.10" en "2_9 Output"
 Niet ingelezen. Op basis van de XLOOKUP-formules in "Movement schedule" weten we:
@@ -163,3 +184,4 @@ handmatig opgebouwde tabel met formules?
 5. Is de kolomverschuiving in "Movement schedule" (N/O headers, evt. toevoegen nieuwe kolom elke maand) puur tekst, of moeten er ook formules mee verschoven worden?
 6. Exacte locatie/kolomstructuur van de "Entity list"-tab in het Input Board Pack zelf (aangenomen: zelfde kolommen als "Legal Entity Dimension", zie hierboven), en hoe "2.9 Output"/"2.10 Output" die precies opzoeken (welke kolom, exacte range).
 7. Kan de Power BI-connectie in `Entity list Power BI - To refresh.xlsx` automatisch ververst worden binnen een Power Automate/Office Script-context, of blijft dat een handmatige stap?
+8. (Optioneel, lager prioriteit) Als directe Power BI-toegang later geregeld wordt: bevestig dat dataset BEHOHR-FDP-PRD-FINANCE / tabel "18. Legal Entity Dimension" via de MCP-connector query-baar wordt (nu `ArtifactAccessDenied` — zie hierboven) zodat de tussenliggende Excel-refresh vervangen kan worden door een rechtstreekse DAX-query.
