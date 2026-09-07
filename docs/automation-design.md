@@ -87,6 +87,39 @@ Last modification status, Asset category, Leased capacity, Type motor
 (kan afwijken als er een extra sleutel-kolom is toegevoegd), en het beginpunt
 (rij 1 = headers, rij 2 = eerste data-rij aangenomen).
 
+### Entity list (bron: MDM via Power BI)
+
+Naast de Anaplan-exports is er een derde brontabel, aangeleverd via
+`{yyyymm} - IFRS16 - 1 - Entity list Power BI - To refresh.xlsx` (in dezelfde
+`IFRS 16`-map). Dit bestand bevat een Power BI-connectie naar dataset
+**BEHOHR-FDP-PRD-FINANCE**, tabel "18. Legal Entity Dimension" — de instructie
+staat letterlijk in het bestand: *"1) REFRESH POWER BI TABLE FOR NEW ENTITIES
+EVERY MONTH"*. Deze dimensie wordt uiteindelijk gevoed vanuit **MDM** (Master
+Data Management) en bevat:
+
+```
+Legal Entity Code | Legal Entity Description | LE Powerhouse | LE Boutique | PH Fluence
+```
+
+plus een klein los mappingtabelletje (kolom G/H) `FDP/Anaplan-naam ↔ Fluence-naam`
+voor PowerHouse-namen die tussen de twee systemen verschillen (bv. "ABY
+Engineering" ↔ "House of ABY").
+
+Deze tabel wordt maandelijks (1) ververst vanuit Power BI/MDM in dit losse
+bestand, en (2) gekopieerd naar de **"Entity list"-tab** in het Input Board
+Pack. Die tab wordt vervolgens gebruikt (vermoedelijk via XLOOKUP/VLOOKUP op
+Legal Entity Code) in de "2.9 Output"/"2.10 Output"-tabs om elke leaseregel aan
+de juiste PowerHouse te koppelen — dit is dus de schakel die de aantallen in
+"Pivots on 2.10" en "Movement schedule" per PowerHouse correct laat optellen.
+
+**Open vraag**: kan de Power BI-connectie in dit bestand automatisch ververst
+worden (Office Script kan `workbook.getPivotTables()` en reguliere
+querytabellen verversen, maar een live Power BI/Analysis Services-connectie
+kan om interactieve herauthenticatie vragen — te bevestigen of de service
+account/Automate-context hiervoor volstaat), of moet die refresh een aparte
+handmatige stap blijven met alleen de kopieerstap naar "Entity list"
+geautomatiseerd?
+
 ### Tabs "Pivots on 2.10" en "2_9 Output"
 Niet ingelezen. Op basis van de XLOOKUP-formules in "Movement schedule" weten we:
 - `Pivots on 2.10!B6:B19` / `C6:C19` = PowerHouse-naam → aantal (blok 1)
@@ -106,16 +139,20 @@ handmatig opgebouwde tabel met formules?
 2. **Nieuwe maandmap aanmaken**: kopieer de volledige `IFRS 16`-map (of specifiek
    het Input Board Pack-bestand) van de vorige periode naar de nieuwe periode-map
    (`sharepoint_copy_item`-achtige actie, native Power Automate "Copy file").
-3. **Anaplan-data inladen**: lees de twee nieuwe exportbestanden (als tabel, via
+3. **Entity list verversen**: ververs (indien automatiseerbaar, zie open vraag
+   hierboven) de Power BI-connectie in `Entity list Power BI - To refresh.xlsx`
+   en lees de resulterende "Legal Entity Dimension"-tabel.
+4. **Anaplan-data inladen**: lees de twee nieuwe exportbestanden (als tabel, via
    "List rows present in a table" — vereist dat de export als Excel-tabel is
    opgemaakt, of via een tussenstap die er een tabel van maakt).
-4. **Office Script uitvoeren** op het gekopieerde Input Board Pack-bestand met
-   als parameters: de ingelezen Anaplan-rijen (2x), en de nieuwe/vorige
-   periodelabels. Zie `scripts/ifrs16-monthly-rollforward.ts`.
-5. **Notificatie**: stuur een mail/Teams-bericht met (a) de gedetecteerde nieuwe
+5. **Office Script uitvoeren** op het gekopieerde Input Board Pack-bestand met
+   als parameters: de entity list-rijen, de ingelezen Anaplan-rijen (2x), en de
+   nieuwe/vorige periodelabels. Zie `scripts/ifrs16-monthly-rollforward.ts`.
+6. **Notificatie**: stuur een mail/Teams-bericht met (a) de gedetecteerde nieuwe
    contracten die zijn voorgevuld in "Mvt Schedule Details" ter review, (b) een
-   herinnering om de "Plug"-kolommen en eventuele header-kolommen (N/O) handmatig
-   te controleren, (c) het resultaat van de CHECK-rij (moet 0 zijn).
+   herinnering om de "Plug"-kolommen, eventuele header-kolommen (N/O) en de
+   Entity list-refresh (indien niet automatiseerbaar) handmatig te controleren,
+   (c) het resultaat van de CHECK-rij (moet 0 zijn).
 
 ## Openstaande punten voor validatie (graag bevestigen voor ik het script afrond)
 
@@ -124,3 +161,5 @@ handmatig opgebouwde tabel met formules?
 3. Exacte kolomstructuur van "2.9 input"/"2.10 input" tabs (headers + startrij).
 4. Bevestig de "VEHICLES - NEW"-tabel in "Mvt Schedule Details" (locatie/kolommen), aangezien die niet in de ingelezen data zat.
 5. Is de kolomverschuiving in "Movement schedule" (N/O headers, evt. toevoegen nieuwe kolom elke maand) puur tekst, of moeten er ook formules mee verschoven worden?
+6. Exacte locatie/kolomstructuur van de "Entity list"-tab in het Input Board Pack zelf (aangenomen: zelfde kolommen als "Legal Entity Dimension", zie hierboven), en hoe "2.9 Output"/"2.10 Output" die precies opzoeken (welke kolom, exacte range).
+7. Kan de Power BI-connectie in `Entity list Power BI - To refresh.xlsx` automatisch ververst worden binnen een Power Automate/Office Script-context, of blijft dat een handmatige stap?

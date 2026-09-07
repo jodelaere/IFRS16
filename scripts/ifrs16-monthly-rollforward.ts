@@ -44,6 +44,26 @@ interface LeaseRow {
   TypeMotor: string
 }
 
+/**
+ * One row of the "Legal Entity Dimension" table, sourced from MDM via the
+ * Power BI dataset BEHOHR-FDP-PRD-FINANCE and refreshed monthly in
+ * "Entity list Power BI - To refresh.xlsx" before being copied into the
+ * "Entity list" tab of the Input Board Pack. CONFIRM-ME: exact target tab
+ * name/columns inside the Input Board Pack (see docs/automation-design.md,
+ * open point 6).
+ */
+interface EntityListRow {
+  LegalEntityCode: string
+  LegalEntityDescription: string
+  LEPowerhouse: string
+  LEBoutique: string
+  PHFluence: string
+}
+
+const ENTITY_LIST_HEADERS: (keyof EntityListRow)[] = [
+  'LegalEntityCode', 'LegalEntityDescription', 'LEPowerhouse', 'LEBoutique', 'PHFluence',
+]
+
 interface RollForwardParams {
   newMonthLabel: string // e.g. "September 2026"
   previousMonthLabel: string // e.g. "August 2026"
@@ -68,10 +88,13 @@ const LEASE_ROW_HEADERS: (keyof LeaseRow)[] = [
 
 function main(
   workbook: ExcelScript.Workbook,
+  entityListRows: EntityListRow[],
   anaplan29Rows: LeaseRow[],
   anaplan210Rows: LeaseRow[],
   params: RollForwardParams
 ) {
+  overwriteEntityListTab(workbook, entityListRows)
+
   overwriteInputTab(workbook, '2.9 input', anaplan29Rows)
   overwriteInputTab(workbook, '2.10 input', anaplan210Rows)
 
@@ -84,6 +107,35 @@ function main(
   appendNewLeases(workbook, anaplan210Rows, params)
 
   refreshEverything(workbook)
+}
+
+function overwriteEntityListTab(workbook: ExcelScript.Workbook, rows: EntityListRow[]) {
+  // CONFIRM-ME: tab name and whether refreshing the source Power BI
+  // connection in "Entity list Power BI - To refresh.xlsx" can itself be
+  // automated (see docs/automation-design.md, open point 7) — this function
+  // assumes the caller (Power Automate) already fetched fresh rows and just
+  // pastes them in here.
+  const sheet = workbook.getWorksheet('Entity list')
+  if (!sheet) {
+    throw new Error('Sheet "Entity list" not found — confirm exact tab name before running.')
+  }
+
+  const headerRow = 1
+  const usedRange = sheet.getUsedRange()
+  const lastDataRow = Math.max(usedRange ? usedRange.getRowCount() : headerRow, headerRow)
+
+  if (lastDataRow > headerRow) {
+    sheet
+      .getRangeByIndexes(headerRow, 0, lastDataRow - headerRow, ENTITY_LIST_HEADERS.length)
+      .clear(ExcelScript.ClearApplyTo.contents)
+  }
+
+  const values = rows.map((row) => ENTITY_LIST_HEADERS.map((key) => row[key] ?? ''))
+  if (values.length > 0) {
+    sheet
+      .getRangeByIndexes(headerRow, 0, values.length, ENTITY_LIST_HEADERS.length)
+      .setValues(values as string[][])
+  }
 }
 
 function overwriteInputTab(workbook: ExcelScript.Workbook, sheetName: string, rows: LeaseRow[]) {
