@@ -112,34 +112,57 @@ Legal Entity Code) in de "2.9 Output"/"2.10 Output"-tabs om elke leaseregel aan
 de juiste PowerHouse te koppelen — dit is dus de schakel die de aantallen in
 "Pivots on 2.10" en "Movement schedule" per PowerHouse correct laat optellen.
 
-**Getest — directe Power BI-query is momenteel niet mogelijk.** Ik heb geprobeerd
-de "18. Legal Entity Dimension"-tabel rechtstreeks te bevragen via de Power
-BI-connector (DAX-query op dataset BEHOHR-FDP-PRD-FINANCE, workspace
-`54172bbd-89f7-4b7c-a86d-786b11475eef`, report `5764f6b0-e1e1-426e-9417-790422fa6e62`),
-om de tussenliggende Excel-refresh helemaal te kunnen overslaan. Dit gaf
-`ArtifactAccessDenied` (403) — dit account/deze sessie heeft geen toegang tot
-dat specifieke Power BI-rapport via de connector, ook al is er wel toegang tot
-het Excel-bestand met dezelfde onderliggende Power BI-connectie.
+### ✅ Gekozen aanpak: rechtstreekse Power BI-query (gevalideerd)
 
-**Gekozen aanpak (default) — via het bestaande Excel-bestand**: de
-automatisering ververst `Entity list Power BI - To refresh.xlsx` (Refresh All)
-en kopieert de resulterende tabel naar de "Entity list"-tab, net zoals het
-huidige handmatige proces. Dit vermijdt de afhankelijkheid van directe Power
-BI-API-toegang.
+De tussenliggende Excel-refresh is **niet nodig** — de entity list kan
+rechtstreeks opgehaald worden met een DAX-query, wat het losse
+`Entity list Power BI - To refresh.xlsx`-bestand volledig uit de flow haalt.
 
-**Toekomstige verbetering (optioneel)**: als iemand met de juiste rechten
-toegang tot dit Power BI-rapport/dataset laat toevoegen voor deze connector
-(of voor de service account die de Power Automate-flow straks draait), kan
-stap 3 in de flow hieronder vervangen worden door een rechtstreekse DAX-query
-— dat elimineert de afhankelijkheid van een los, kwetsbaar Excel-bestand met
-een Power BI-connectie die soms niet ververst.
+**Belangrijk — gebruik het Treasury-model, niet het FDP-model rechtstreeks:**
 
-**Nog wel te bevestigen** (ongeacht welke bron gekozen wordt): kan de Power
-BI-connectie in `Entity list Power BI - To refresh.xlsx` automatisch ververst
-worden binnen een Office Script/Power Automate-context (een live Power
-BI/Analysis Services-connectie kan om interactieve herauthenticatie vragen),
-of blijft die refresh een handmatige stap met alleen de kopieerstap naar
-"Entity list" geautomatiseerd?
+| Route | artifactId | Resultaat |
+|---|---|---|
+| FDP-model `BEHOHR-FDP-PRD-FINANCE` (workspace `54172bbd-…`) | `5764f6b0-e1e1-426e-9417-790422fa6e62` | ❌ `ArtifactAccessDenied` (403) |
+| Treasury-model `HOHR Treasury Report - FDP` (workspace `BEHOHR-FIN-PRD-REPORTS`, `4505ccf4-…`) | `68d39a44-643a-40ce-bfb2-cbf6e2a0e3c6` | ✅ werkt |
+
+Het Treasury-model DirectQuery't alle FDP-tabellen, dus `'18. Legal Entity
+Dimension'` is daar gewoon beschikbaar. Er is dus **geen extra Build-permissie
+of access request nodig** — enkel de juiste artifactId.
+
+**Gevalideerde query:**
+
+```dax
+EVALUATE
+SELECTCOLUMNS('18. Legal Entity Dimension',
+  "Code",        '18. Legal Entity Dimension'[Legal Entity Code],
+  "Description", '18. Legal Entity Dimension'[Legal Entity Description],
+  "Powerhouse",  '18. Legal Entity Dimension'[LE Powerhouse],
+  "Boutique",    '18. Legal Entity Dimension'[LE Boutique],
+  "Active",      '18. Legal Entity Dimension'[LE Active])
+```
+
+**Validatie tegen het huidige Excel-bestand** (P8 2026): de query geeft
+**358 entiteiten**, 13 PowerHouses, 76 boutiques — exact hetzelfde aantal als
+de 361 rijen in het Excel-bestand min de 3 header/instructie-rijen. Steekproef
+van waarden matcht 1-op-1 (1001 House of HR NV → House of Support/House of
+Support; 1004 House of Invest NV → House of Support/House of Invest; -1
+_Third Party (External) → N/A).
+
+> ⚠️ **Geen `LE Active`-filter toepassen hier.** Voor P&L-cijfers schrijft de
+> FDP-skill voor om `LE Active = "NO"`/`"ONGOING_INTEGRATION"` uit te filteren,
+> maar dit is een **mapping-tabel**, geen financiële aggregatie: een entiteit
+> die niet meer actief is kan nog steeds lopende of historische leasecontracten
+> hebben in de Anaplan-export. Filteren zou die contracten zonder PowerHouse
+> achterlaten. Haal dus de volledige lijst op (inclusief de `null`-waarde bij
+> `-1 _Third Party (External)`).
+
+**De "PH FLUENCE"-kolom is Excel-logica, geen Power BI-kolom.** In het huidige
+bestand zijn kolommen A–D de Power BI query-output (headers dragen het prefix
+`18. Legal Entity Dimension[...]`), terwijl kolom E ("PH FLUENCE") géén prefix
+heeft: dat is een Excel-formule die de PowerHouse-naam opzoekt in het kleine
+mappingtabelletje in kolom G/H (`FDP / Anaplan` ↔ `Fluence`). Die mapping is
+statisch en moet dus **behouden** blijven in de automatisering — de DAX-query
+levert alleen A–D, kolom E blijft een afgeleide lookup.
 
 ### Tabs "Pivots on 2.10" en "2_9 Output"
 Niet ingelezen. Op basis van de XLOOKUP-formules in "Movement schedule" weten we:
@@ -160,9 +183,11 @@ handmatig opgebouwde tabel met formules?
 2. **Nieuwe maandmap aanmaken**: kopieer de volledige `IFRS 16`-map (of specifiek
    het Input Board Pack-bestand) van de vorige periode naar de nieuwe periode-map
    (`sharepoint_copy_item`-achtige actie, native Power Automate "Copy file").
-3. **Entity list verversen**: ververs (indien automatiseerbaar, zie open vraag
-   hierboven) de Power BI-connectie in `Entity list Power BI - To refresh.xlsx`
-   en lees de resulterende "Legal Entity Dimension"-tabel.
+3. **Entity list ophalen**: draai de DAX-query hierboven tegen het Treasury-model
+   (artifactId `68d39a44-643a-40ce-bfb2-cbf6e2a0e3c6`) via de Power BI-connector
+   in Power Automate ("Run a query against a dataset"-actie). Het losse
+   `Entity list Power BI - To refresh.xlsx`-bestand is hierdoor niet meer nodig
+   in de flow.
 4. **Anaplan-data inladen**: lees de twee nieuwe exportbestanden (als tabel, via
    "List rows present in a table" — vereist dat de export als Excel-tabel is
    opgemaakt, of via een tussenstap die er een tabel van maakt).
@@ -171,9 +196,11 @@ handmatig opgebouwde tabel met formules?
    nieuwe/vorige periodelabels. Zie `scripts/ifrs16-monthly-rollforward.ts`.
 6. **Notificatie**: stuur een mail/Teams-bericht met (a) de gedetecteerde nieuwe
    contracten die zijn voorgevuld in "Mvt Schedule Details" ter review, (b) een
-   herinnering om de "Plug"-kolommen, eventuele header-kolommen (N/O) en de
-   Entity list-refresh (indien niet automatiseerbaar) handmatig te controleren,
-   (c) het resultaat van de CHECK-rij (moet 0 zijn).
+   herinnering om de "Plug"-kolommen en eventuele header-kolommen (N/O)
+   handmatig te controleren, (c) het resultaat van de CHECK-rij (moet 0 zijn),
+   (d) een waarschuwing bij nieuwe entiteiten in de entity list die nog geen
+   PowerHouse-mapping hebben (`N/A` of leeg) — die moeten in MDM aangevuld
+   worden voor de aantallen correct optellen.
 
 ## Openstaande punten voor validatie (graag bevestigen voor ik het script afrond)
 
@@ -183,5 +210,8 @@ handmatig opgebouwde tabel met formules?
 4. Bevestig de "VEHICLES - NEW"-tabel in "Mvt Schedule Details" (locatie/kolommen), aangezien die niet in de ingelezen data zat.
 5. Is de kolomverschuiving in "Movement schedule" (N/O headers, evt. toevoegen nieuwe kolom elke maand) puur tekst, of moeten er ook formules mee verschoven worden?
 6. Exacte locatie/kolomstructuur van de "Entity list"-tab in het Input Board Pack zelf (aangenomen: zelfde kolommen als "Legal Entity Dimension", zie hierboven), en hoe "2.9 Output"/"2.10 Output" die precies opzoeken (welke kolom, exacte range).
-7. Kan de Power BI-connectie in `Entity list Power BI - To refresh.xlsx` automatisch ververst worden binnen een Power Automate/Office Script-context, of blijft dat een handmatige stap?
-8. (Optioneel, lager prioriteit) Als directe Power BI-toegang later geregeld wordt: bevestig dat dataset BEHOHR-FDP-PRD-FINANCE / tabel "18. Legal Entity Dimension" via de MCP-connector query-baar wordt (nu `ArtifactAccessDenied` — zie hierboven) zodat de tussenliggende Excel-refresh vervangen kan worden door een rechtstreekse DAX-query.
+7. Bevestig dat de Power BI-connector in Power Automate ("Run a query against a dataset") met dezelfde credentials het Treasury-model kan bereiken als de flow onder een service account draait in plaats van onder je eigen account.
+
+### ✅ Opgelost
+
+- ~~Entity list-bron: Excel-refresh vs. directe query~~ → directe DAX-query via het Treasury-model werkt en is gevalideerd (358 entiteiten, exact match met het Excel-bestand). Zie "Gekozen aanpak" hierboven.

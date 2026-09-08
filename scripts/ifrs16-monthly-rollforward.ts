@@ -45,24 +45,34 @@ interface LeaseRow {
 }
 
 /**
- * One row of the "Legal Entity Dimension" table, sourced from MDM via the
- * Power BI dataset BEHOHR-FDP-PRD-FINANCE and refreshed monthly in
- * "Entity list Power BI - To refresh.xlsx" before being copied into the
- * "Entity list" tab of the Input Board Pack. CONFIRM-ME: exact target tab
- * name/columns inside the Input Board Pack (see docs/automation-design.md,
- * open point 6).
+ * One row of the "Legal Entity Dimension" table (MDM master data), queried
+ * directly from the Power BI Treasury model — artifactId
+ * 68d39a44-643a-40ce-bfb2-cbf6e2a0e3c6, which DirectQueries the FDP tables.
+ * The FDP model itself (5764f6b0-…) returns ArtifactAccessDenied; the
+ * Treasury route works. Validated at 358 entities against the P8 2026 file.
+ * See docs/automation-design.md for the exact DAX query.
+ *
+ * Note: "PH Fluence" is deliberately absent — it is not a Power BI column but
+ * an Excel-side lookup against the static FDP/Anaplan ↔ Fluence PowerHouse
+ * name mapping, which stays in the workbook.
+ *
+ * CONFIRM-ME: exact target tab name/columns inside the Input Board Pack (see
+ * docs/automation-design.md, open point 6).
  */
 interface EntityListRow {
   LegalEntityCode: string
   LegalEntityDescription: string
   LEPowerhouse: string
   LEBoutique: string
-  PHFluence: string
+  LEActive: string
 }
 
 const ENTITY_LIST_HEADERS: (keyof EntityListRow)[] = [
-  'LegalEntityCode', 'LegalEntityDescription', 'LEPowerhouse', 'LEBoutique', 'PHFluence',
+  'LegalEntityCode', 'LegalEntityDescription', 'LEPowerhouse', 'LEBoutique', 'LEActive',
 ]
+
+/** PowerHouses with no mapping yet — flagged for follow-up in MDM. */
+const UNMAPPED_POWERHOUSE_VALUES = ['', 'N/A']
 
 interface RollForwardParams {
   newMonthLabel: string // e.g. "September 2026"
@@ -110,11 +120,10 @@ function main(
 }
 
 function overwriteEntityListTab(workbook: ExcelScript.Workbook, rows: EntityListRow[]) {
-  // CONFIRM-ME: tab name and whether refreshing the source Power BI
-  // connection in "Entity list Power BI - To refresh.xlsx" can itself be
-  // automated (see docs/automation-design.md, open point 7) — this function
-  // assumes the caller (Power Automate) already fetched fresh rows and just
-  // pastes them in here.
+  // Rows come from the Power Automate Power BI query step (Treasury model) —
+  // no LE Active filter is applied there on purpose: an inactive entity can
+  // still carry live or historical leases in the Anaplan export, and filtering
+  // would leave those contracts without a PowerHouse.
   const sheet = workbook.getWorksheet('Entity list')
   if (!sheet) {
     throw new Error('Sheet "Entity list" not found — confirm exact tab name before running.')
@@ -135,6 +144,19 @@ function overwriteEntityListTab(workbook: ExcelScript.Workbook, rows: EntityList
     sheet
       .getRangeByIndexes(headerRow, 0, values.length, ENTITY_LIST_HEADERS.length)
       .setValues(values as string[][])
+  }
+
+  // Entities without a PowerHouse mapping drop out of the per-PowerHouse
+  // totals, so surface them for follow-up in MDM rather than failing silently.
+  const unmapped = rows.filter((row) =>
+    UNMAPPED_POWERHOUSE_VALUES.indexOf(row.LEPowerhouse ?? '') !== -1
+  )
+  if (unmapped.length > 0) {
+    console.log(
+      `Entities without a PowerHouse mapping (fix in MDM): ${unmapped
+        .map((row) => `${row.LegalEntityCode} ${row.LegalEntityDescription}`)
+        .join(', ')}`
+    )
   }
 }
 
