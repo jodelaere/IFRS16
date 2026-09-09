@@ -153,13 +153,32 @@ zonder maandgrens — in tegenstelling tot de IN/OUT-vlaggen. Een transfer gedat
 december 2026 telt dus mee in het augustus-pack. Per PowerHouse compenseren die
 niet noodzakelijk. **Vraag: is dat bewust?**
 
-### 5. Lease Liability bij niet-maandelijkse betalingen
+### 5. 🔴 Lease Liability is fout voor kwartaalcontracten
 
-`Lease Liability` = `fixed payment × lease duration (maanden)`. Voor maandelijkse
-contracten is dat de (niet-gedisconteerde) totale huur. Voor het ene kwartaal-
-contract in P8 (rij 19: € 13.663,75 per kwartaal, 36 maanden) geeft dat
-€ 491.895, terwijl 12 kwartalen × € 13.663,75 = € 163.965 — een factor 3.
-**Vraag: is dat bewust, of moet de frequentie meegerekend worden?**
+`Lease Liability` = `=H*G` = `fixed payment × lease duration (maanden)`. Dat klopt
+alleen voor maandelijkse betalingen. Een kwartaalcontract wordt met **factor 3**
+overschat, want de kwartaalbetaling wordt 36× geteld in plaats van 12×.
+
+**Bevestigd als fout** — de juiste basis is *betaling × aantal betalingen*.
+
+In de Anaplan-data komen exact twee frequenties voor: `Monthly` en `Quarterly`.
+Quarterly zit bijna uitsluitend bij buildings (128 van 129 in 2.10 Input),
+precies de populatie die in "BUILDINGS - NEW" belandt — dus dit raakt vrijwel
+elke maand waarin een nieuw kwartaalcontract start.
+
+Juiste formule (zie template-wijziging E):
+
+```
+=H19*G19/IFS(I19="Monthly",1,I19="Quarterly",3)
+```
+
+`IFS` heeft bewust geen fallback: een onbekende frequentie geeft `#N/A` in plaats
+van een stil verkeerd cijfer.
+
+**Impact op P8 2026**: rij 19 (ClickCare Antwerpen, € 13.663,75 per kwartaal,
+36 maanden) gaat van € 491.895 naar € 163.965. Het totaal `L25` daalt daardoor
+van **€ 675.778,87 naar € 347.848,87** — de overige vijf contracten zijn
+maandelijks en blijven ongewijzigd. Te beslissen of P8 herzien wordt.
 
 ## Eenmalige template-wijzigingen
 
@@ -223,6 +242,16 @@ berekening blijft kloppen als de pivotrijen verschuiven:
 ```
 C82  =IFERROR(XLOOKUP($B82,$B$49:$B$59,C$49:C$59),0) - IFERROR(XLOOKUP($B82,$B$67:$B$77,C$67:C$77),0)
 ```
+
+### E. Lease Liability corrigeren voor betalingsfrequentie (bevinding 5)
+
+Vervang in `Mvt Schedule Details` kolom L (rij 19 en verder) `=H19*G19` door:
+
+```
+=H19*G19/IFS(I19="Monthly",1,I19="Quarterly",3)
+```
+
+Het script zet deze formule vanaf nu zelf bij elke nieuw gedetecteerde building.
 
 ## Power Automate flow
 
@@ -290,6 +319,6 @@ rijen op de `Entity List PowerBI`-tab.
 ## Openstaande vragen
 
 1. Transfers zonder maandgrens (bevinding 4) — bewust?
-2. Lease Liability bij kwartaalbetalingen (bevinding 5) — bewust?
-3. Moet de plug in kolom L leeggemaakt worden bij de roll, of blijft de vorige
+2. Moet de plug in kolom L leeggemaakt worden bij de roll, of blijft de vorige
    waarde staan als vertrekpunt? Het script laat hem nu staan en vlagt hem.
+3. Wordt P8 2026 herzien voor de Lease Liability-correctie (bevinding 5)?

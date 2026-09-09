@@ -232,9 +232,14 @@ function rollMovementSchedule(workbook: ExcelScript.Workbook, params: RollForwar
  * Column layout (verified): A key | B entity | C description | D commencement |
  * E end date selection | F end date | G duration | H fixed payment |
  * I frequency | J asset category | K leased capacity | L lease liability.
- * L is a formula =H*G (fixed payment × duration) — see the open question in
- * docs/automation-design.md about non-monthly payment frequencies.
+ *
+ * L = payment × number of payments, so the duration in months is divided by the
+ * months per payment period. The workbook's own =H*G only holds for Monthly; a
+ * Quarterly contract was overstated threefold. IFS deliberately has no fallback
+ * branch: an unexpected frequency yields #N/A rather than a silently wrong
+ * figure. Only Monthly and Quarterly occur in the Anaplan data today.
  */
+const PAYMENTS_PER_PERIOD_FORMULA = 'IFS({col}="Monthly",1,{col}="Quarterly",3)'
 function appendNewBuildings(workbook: ExcelScript.Workbook, currentExport: LeaseRow[], params: RollForwardParams) {
   const sheet = workbook.getWorksheet(SHEET_MVT_DETAILS)
   if (!sheet) throw new Error(`Sheet "${SHEET_MVT_DETAILS}" not found.`)
@@ -270,7 +275,8 @@ function appendNewBuildings(workbook: ExcelScript.Workbook, currentExport: Lease
       row.AssetCategory,
       row.LeasedCapacity,
     ]])
-    sheet.getRange(`L${rowNumber}`).setFormula(`=H${rowNumber}*G${rowNumber}`)
+    const divisor = PAYMENTS_PER_PERIOD_FORMULA.replace(/\{col\}/g, `I${rowNumber}`)
+    sheet.getRange(`L${rowNumber}`).setFormula(`=H${rowNumber}*G${rowNumber}/${divisor}`)
   })
 
   if (newBuildings.length > 0) {
