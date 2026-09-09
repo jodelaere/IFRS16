@@ -157,7 +157,13 @@ function setReportingPeriod(workbook: ExcelScript.Workbook, periodEndDate: strin
       'and this script cannot control which period they compute.'
     )
   }
-  namedItem.getRange().setValue(periodEndDate)
+  // A DATE() formula rather than the ISO string: Date.From() in the queries
+  // would otherwise parse text under whatever locale the refresh runs in.
+  const parts = periodEndDate.split('-')
+  if (parts.length !== 3) {
+    throw new Error(`periodEndDate must be ISO (yyyy-mm-dd), got "${periodEndDate}".`)
+  }
+  namedItem.getRange().setFormula(`=DATE(${Number(parts[0])},${Number(parts[1])},${Number(parts[2])})`)
 }
 
 /** Column G for both blocks, including the group total row. */

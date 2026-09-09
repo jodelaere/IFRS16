@@ -117,7 +117,10 @@ function applyReportingPeriodCell(workbook: ExcelScript.Workbook): string {
   const info = workbook.getWorksheet(SETUP_SHEET_INFO)
   info.getRange('A7').setValue('Reporting period end (drives both Power Queries)')
   const cell = info.getRange(SETUP_PERIOD_CELL)
-  cell.setValue(SETUP_PERIOD_INITIAL)
+  // Written as a DATE() formula, not a string: Date.From() in the queries would
+  // otherwise parse text under whatever locale the refresh runs in.
+  const parts = SETUP_PERIOD_INITIAL.split('-')
+  cell.setFormula(`=DATE(${parts[0]},${Number(parts[1])},${Number(parts[2])})`)
   cell.setNumberFormat('dd/mm/yyyy')
   workbook.addNamedItem(SETUP_PERIOD_NAME, `=${SETUP_SHEET_INFO}!$${SETUP_PERIOD_CELL[0]}$${SETUP_PERIOD_CELL.substring(1)}`, 'Reporting period end read by the 2.9 and 2.10 Power Queries')
   return `A: created ${SETUP_PERIOD_NAME} at ${SETUP_SHEET_INFO}!${SETUP_PERIOD_CELL} = ${SETUP_PERIOD_INITIAL}.`

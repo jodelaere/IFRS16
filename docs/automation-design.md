@@ -251,32 +251,32 @@ elke maand meekopieert.
 
 ### A. Rapportageperiode als parameter (randvoorwaarde, zie bevinding 1)
 
-1. Zet op de `Info`-tab een cel met de periode-einddatum (bv. `B7` = `31/08/2026`)
-   en geef die de naam **`ReportingPeriodEnd`** (Formulas → Define Name).
-2. Vervang in beide queries (Data → Queries → Edit) `DateTime.LocalNow()` door
-   die parameter. Voeg bovenaan elke `let` toe:
+Het setup-script maakt de named cell `ReportingPeriodEnd` aan (Info!B7). Daarna
+alleen nog de M-code vervangen — **plak de volledige queries** uit
+`scripts/power-query/`, doe geen losse zoek-vervang-acties:
 
-```m
-ReportingPeriodEnd = Date.From(Excel.CurrentWorkbook(){[Name="ReportingPeriodEnd"]}[Content]{0}[Column1]),
-```
+1. Data → Queries & Connections → rechtsklik **2/10 Output** → Edit → Home →
+   Advanced Editor → alles selecteren → plak [`2-10-Output.m`](../scripts/power-query/2-10-Output.m) → Done.
+2. Idem voor **2/9 Output** met [`2-9-Output.m`](../scripts/power-query/2-9-Output.m).
+3. Refresh All en vergelijk met het huidige P8-resultaat. De cijfers moeten
+   **identiek** zijn — de wijziging verandert waar de periode vandaan komt, niet
+   welke periode het is.
 
-3. Pas de vlaggen aan — let op: de `-1` verdwijnt, omdat de parameter *in* de
-   rapportagemaand ligt en `LocalNow()` in de maand erna lag:
+Wat er inhoudelijk verandert:
 
-| Query | Was | Wordt |
-|---|---|---|
-| 2/10 | `Date.IsInCurrentYear([Lease commencement date])` | `Date.Year([Lease commencement date]) = Date.Year(ReportingPeriodEnd)` |
-| 2/10 | `Date.Month([Lease commencement date]) <= Date.Month(DateTime.LocalNow())-1` | `Date.Month([Lease commencement date]) <= Date.Month(ReportingPeriodEnd)` |
-| 2/10 | `Date.IsInCurrentYear([Reasonably certain end date])` | `Date.Year([Reasonably certain end date]) = Date.Year(ReportingPeriodEnd)` |
-| 2/10 | `Date.Month([Reasonably certain end date]) <= Date.Month(DateTime.LocalNow())-1` | `Date.Month([Reasonably certain end date]) <= Date.Month(ReportingPeriodEnd)` |
-| 2/10 | `Date.IsInCurrentYear([Transfer IN Date])` / `[Transfer Out Date]` | `Date.Year(…) = Date.Year(ReportingPeriodEnd)` |
-| 2/9 | `Date.IsInCurrentYear([Lease commencement date])` | `Date.Year(…) = Date.Year(ReportingPeriodEnd)` |
-| 2/9 | `Date.Month([Lease commencement date]) >= Date.Month(DateTime.LocalNow())` | `Date.Month([Lease commencement date]) > Date.Month(ReportingPeriodEnd)` |
-| 2/9 | `Date.IsInCurrentYear([Reasonably certain end date])` | `Date.Year(…) = Date.Year(ReportingPeriodEnd)` |
-| 2/9 | `Date.Month([Reasonably certain end date]) <= Date.Month(DateTime.LocalNow())-1` | `Date.Month([Reasonably certain end date]) <= Date.Month(ReportingPeriodEnd)` |
+- `DateTime.LocalNow()` → `ReportingPeriodEnd`. De `-1` verdwijnt daarbij, want
+  de parameter ligt *in* de rapportagemaand en `LocalNow()` lag in de maand erna.
+  In de 2/9-query wordt `>= Date.Month(LocalNow)` daarom `> Date.Month(RPE)`.
+- Elke vlag behoudt `null` als de brondatum leeg is.
 
-4. Controle: zet `ReportingPeriodEnd` op `31/08/2026`, Refresh All, en vergelijk
-   met het huidige P8-resultaat. De cijfers moeten identiek zijn.
+> ⚠️ Dat laatste is geen detail. `Date.IsInCurrentYear(null)` geeft `null`, en
+> beide TRANSFER-pivots filteren `Transfers (OUT)` op **`(blank)`** — precies die
+> null. Een kale `Date.Year(null) = Date.Year(…)` geeft `false` in plaats van
+> `null`, waardoor die filter niets meer matcht en de transfercijfers stil
+> veranderen. Vandaar de expliciete `if [datum] = null then null else …`.
+
+> ⚠️ De datum wordt als **`=DATE(jjjj;mm;dd)`-formule** weggeschreven, niet als
+> tekst. `Date.From()` op tekst hangt af van de locale waarin de refresh draait.
 
 ### B. Entity List aansluiten op de Power BI-tab (bevinding 2)
 
