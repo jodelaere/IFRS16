@@ -127,6 +127,13 @@ function applyReportingPeriodCell(workbook: ExcelScript.Workbook): string {
  * Change B: feed the hard-copy Entity List from the Power BI tab, leaving the
  * 24k+ XLOOKUP formulas in the output tabs untouched. PowerHouse is column F on
  * the source tab — column C there is LE Country Long.
+ *
+ * The entity code needs VALUE(). The Power BI tab returns codes as text
+ * ('1001') while the hard copy holds them as numbers (1001) and both output
+ * tabs look them up with an Int64 entity code. XLOOKUP is type-strict, so a
+ * plain reference would turn every lookup into #N/A and wipe out the entire
+ * PowerHouse mapping. IFERROR keeps genuinely non-numeric codes as text, which
+ * correctly leaves them unmatched and visible rather than silently coerced.
  */
 function applyEntityListLink(workbook: ExcelScript.Workbook): string {
   const sheet = workbook.getWorksheet(SETUP_SHEET_ENTITY_LIST)
@@ -137,12 +144,13 @@ function applyEntityListLink(workbook: ExcelScript.Workbook): string {
     const sourceRow = targetRow + ENTITY_SOURCE_OFFSET
     sourceColumns.forEach((sourceColumn, columnIndex) => {
       const reference = `'${SETUP_SHEET_ENTITY_PBI}'!${sourceColumn}${sourceRow}`
+      const value = columnIndex === 0 ? `IFERROR(VALUE(${reference}),${reference})` : reference
       sheet
         .getRangeByIndexes(targetRow - 1, columnIndex, 1, 1)
-        .setFormula(`=IF(${reference}="","",${reference})`)
+        .setFormula(`=IF(${reference}="","",${value})`)
     })
   }
-  return `B: Entity List rows ${ENTITY_FIRST_TARGET_ROW}-${ENTITY_FIRST_TARGET_ROW + ENTITY_ROW_COUNT - 1} now derive from ${SETUP_SHEET_ENTITY_PBI} (PowerHouse from column F).`
+  return `B: Entity List rows ${ENTITY_FIRST_TARGET_ROW}-${ENTITY_FIRST_TARGET_ROW + ENTITY_ROW_COUNT - 1} now derive from ${SETUP_SHEET_ENTITY_PBI} (PowerHouse from column F, code converted back to a number).`
 }
 
 /** Change C: the count block equals Movement schedule column P — link it instead of retyping. */

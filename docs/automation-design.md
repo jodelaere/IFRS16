@@ -228,8 +228,26 @@ output — `2_9 Output` telt 155 datarijen en geen enkele zonder entity code.
 Die leases zitten dus in **geen enkele PowerHouse-telling**, en omdat beide
 zijden van de reconciliatie ze even hard missen, blijft de CHECK-rij netjes op 0.
 
-**Op te lossen in Anaplan** (entity code corrigeren naar 2104), niet in de
-workbook. Het roll-forward script rapporteert vanaf nu elke entity code uit de
+Bevestigd: `2XXX` is in Anaplan als **volwaardige entiteit** aangemaakt, maar met
+een placeholder-code. Naast haar bestaat `2104 - TMI AP B.V.` met 185 eigen
+contracten, dus het zijn twee aparte populaties. De contractnamen van
+ZorgXchange beginnen wel allemaal met `2104_` (`2XXX__2104_H-139-JN`).
+
+Er zijn dus **twee gaten**, en beide moeten dicht:
+
+1. **Anaplan** — `2XXX` is geen echte code. Zolang hij niet-numeriek is, blijft
+   de `Int64.Type`-cast de rijen laten sneuvelen.
+2. **MDM** — ZorgXchange staat niet in de Legal Entity Dimension (358 entiteiten,
+   geen match). Zelfs mét een numerieke code krijgt ze dan nog geen PowerHouse.
+
+Te beslissen: krijgt ZorgXchange een eigen code in MDM, of horen die contracten
+onder 2104/TMI? Dat is een master-datakeuze, geen technische.
+
+Speelt al langer: de contracten starten tussen 2019 en 2024, dus voorgaande packs
+missen ze ook. Impact op TMI: de 2.9-snapshot mist er 9 (425 zou 434 zijn), het
+2.10-universum 54.
+
+Het roll-forward script rapporteert vanaf nu elke entity code uit de
 Anaplan-input die niet in de entiteitenlijst voorkomt, met het aantal contracten.
 
 ## Eenmalige template-wijzigingen
@@ -272,11 +290,18 @@ Laat de lookups ongemoeid (24.000+ formules) en voed de oude tab uit de nieuwe.
 Zet in `Entity List` op rij 3 en vul door tot rij 360:
 
 ```
-A3  ='Entity List PowerBI'!A4
+A3  =IF('Entity List PowerBI'!A4="","",IFERROR(VALUE('Entity List PowerBI'!A4),'Entity List PowerBI'!A4))
 B3  ='Entity List PowerBI'!B4
 C3  ='Entity List PowerBI'!F4     <-- F, niet C
 D3  ='Entity List PowerBI'!G4
 ```
+
+> ⚠️ **Kolom A moet door `VALUE()`.** De Power BI-tab levert de entity code als
+> **tekst** (`'1001'`), terwijl de hard copy hem als **getal** bewaart (`1001`)
+> en beide output-tabs opzoeken met een Int64-code. XLOOKUP is typegevoelig, dus
+> een kale verwijzing maakt van élke opzoeking `#N/A` en wist de volledige
+> PowerHouse-mapping. De `IFERROR` houdt echt niet-numerieke codes als tekst,
+> waardoor die zichtbaar onopgelost blijven in plaats van stil te worden omgezet.
 
 ### C. Mvt Schedule Details koppelen (haalt een manuele stap weg)
 
