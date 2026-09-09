@@ -143,20 +143,24 @@ Een connectie ín de werkmap heeft geen van die drie problemen: ze reist mee bij
 het kopiëren naar de nieuwe maandmap, kent geen pad- of naamafhankelijkheid, en
 is programmatisch aanspreekbaar.
 
-#### Uit te voeren (eenmalig, in Excel Desktop)
+#### Status: uitgevoerd in P8 2026
 
-1. Open `202609 - IFRS16 - 3 - Input Board Pack.xlsx` (P9-map) én het bestaande
-   `Entity list Power BI - To refresh.xlsx` naast elkaar.
-2. Neem in het board pack de Power BI-verbinding over op de "Entity list"-tab
-   (Data → Get Data → From Power Platform → From Power BI semantic models →
-   `BEHOHR-FDP-PRD-FINANCE` → tabel `18. Legal Entity Dimension`), of kopieer de
-   bestaande query via Power Query Editor (rechtsklik query → Copy, plakken in
-   de query-editor van het board pack).
-3. Behoud de kolommen A–D in dezelfde volgorde als nu, en laat de
-   `PH FLUENCE`-formule (kolom E) en het `FDP/Anaplan ↔ Fluence`-mappingtabelletje
-   (kolom G/H) ongewijzigd staan — die zijn Excel-logica, geen Power BI-kolommen.
-4. Test: "Refresh All" → de entity list moet 358 rijen geven (stand P8 2026).
-5. Daarna is dit de template die elke maand mee gekopieerd wordt.
+De verbinding is toegevoegd aan `202608 - IFRS16 - 3 - Input Board Pack.xlsx`
+(P8-map), op de tab **"Entity List PowerBI"**. Dat bestand is daarmee de
+template die vanaf nu elke maand mee gekopieerd wordt.
+
+Nog te bevestigen op die tab:
+- "Refresh All" geeft **358 rijen** (stand P8 2026) — de tegentest tegen de
+  gevalideerde DAX-query.
+- Kolomvolgorde A–D = `Legal Entity Code | Legal Entity Description |
+  LE Powerhouse | LE Boutique`, zoals in het bronbestand. Het script leest
+  kolom A/B/C terug om niet-gemapte entiteiten te signaleren.
+- De `PH FLUENCE`-formule en het `FDP/Anaplan ↔ Fluence`-mappingtabelletje
+  staan mee op de tab (Excel-logica, geen Power BI-kolommen).
+
+> ⚠️ Als er al een P9-board pack gekopieerd was **vóór** deze wijziging, bevat
+> die kopie de verbinding niet — opnieuw kopiëren vanaf de bijgewerkte
+> P8-versie, of de verbinding daar apart toevoegen.
 
 > ⚠️ **Nog te testen**: of een Power BI-verbinding (Analysis Services) ook
 > ververst kan worden vanuit een Office Script / Power Automate-context, of dat

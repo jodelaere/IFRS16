@@ -49,13 +49,15 @@ interface LeaseRow {
 }
 
 /**
- * Column holding the PowerHouse on the "Entity list" tab, checked after the
- * refresh so entities MDM has not mapped yet get surfaced instead of silently
- * dropping out of the per-PowerHouse totals.
- * CONFIRM-ME: exact tab name and column index (see docs/automation-design.md,
- * open point 6).
+ * The tab carrying the Power BI connection to the Legal Entity Dimension,
+ * added to the board pack in P8 2026. Read back after the refresh so entities
+ * MDM has not mapped yet get surfaced instead of silently dropping out of the
+ * per-PowerHouse totals.
+ * CONFIRM-ME: column indexes assume the connection returns the same order as
+ * the standalone source file (A Code, B Description, C LE Powerhouse,
+ * D LE Boutique).
  */
-const ENTITY_LIST_SHEET = 'Entity list'
+const ENTITY_LIST_SHEET = 'Entity List PowerBI'
 const ENTITY_LIST_CODE_COLUMN = 0
 const ENTITY_LIST_DESCRIPTION_COLUMN = 1
 const ENTITY_LIST_POWERHOUSE_COLUMN = 2
