@@ -117,17 +117,48 @@ function main(
   anaplan210Rows: LeaseRow[],
   params: RollForwardParams
 ): string {
+  // Column G still holds the previous month's counts until the new Anaplan data
+  // is loaded, so capture it first — that is exactly what column O needs.
+  const previousMonthCounts = capturePreviousMonthCounts(workbook)
+
   replaceInputTable(workbook, TABLE_29_INPUT, anaplan29Rows)
   replaceInputTable(workbook, TABLE_210_INPUT, anaplan210Rows)
 
   refreshQueriesAndPivots(workbook)
 
+  writePreviousMonthCounts(workbook, previousMonthCounts)
   rollMovementSchedule(workbook, params)
   appendNewBuildings(workbook, anaplan210Rows, params)
 
   refreshQueriesAndPivots(workbook)
 
   return buildReviewReport(workbook, params)
+}
+
+/** Column G for both blocks, including the group total row. */
+function capturePreviousMonthCounts(workbook: ExcelScript.Workbook): (string | number | boolean)[][][] {
+  const sheet = workbook.getWorksheet(SHEET_MOVEMENT)
+  if (!sheet) throw new Error(`Sheet "${SHEET_MOVEMENT}" not found.`)
+
+  return [BUILDINGS_FIRST_ROW, VEHICLES_FIRST_ROW].map((firstRow) =>
+    sheet.getRange(`G${firstRow}:G${firstRow + POWERHOUSE_COUNT}`).getValues()
+  )
+}
+
+/**
+ * Writes the captured counts into column O ("prior month"), which is a typed
+ * value column — it used to be =SUM(H:L), which resolved to current month plus
+ * plug and therefore did not represent the prior month at all. Column P
+ * (=G-O) only yields a real month-on-month movement once O holds actual prior
+ * month figures.
+ */
+function writePreviousMonthCounts(workbook: ExcelScript.Workbook, counts: (string | number | boolean)[][][]) {
+  const sheet = workbook.getWorksheet(SHEET_MOVEMENT)
+  if (!sheet) throw new Error(`Sheet "${SHEET_MOVEMENT}" not found.`)
+
+  ;[BUILDINGS_FIRST_ROW, VEHICLES_FIRST_ROW].forEach((firstRow, index) => {
+    sheet.getRange(`O${firstRow}:O${firstRow + POWERHOUSE_COUNT}`).setValues(counts[index])
+  })
 }
 
 /**
@@ -184,11 +215,15 @@ function refreshQueriesAndPivots(workbook: ExcelScript.Workbook) {
 /**
  * Rolls the period labels and shifts the plug column one month back.
  *
- * The plug in column L is a manual reconciling entry: column O ("prior month")
- * is SUM(H:L), which reduces to current month + plug, and column P is the
- * month's movement. The new plug is a judgement the preparer makes, so this
- * only preserves last month's value in column M and leaves L for review — it
- * never invents one.
+ * The plug in column L feeds the Terminated contracts formula
+ * (E = -XLOOKUP(pivot OUT) + L), so it reconciles the YTD build-up
+ * B+C+D+E+F to the 2.9 snapshot count in column G — it is the difference
+ * between the 2.10 and 2.9 cuts, not a prior-month device.
+ *
+ * It therefore has to be re-established for each new cut. This preserves last
+ * month's value in column M and leaves L untouched for the preparer; the review
+ * report states how much extra plug each PowerHouse needs to tie. Deliberately
+ * not auto-plugged: forcing the tie would mask genuine data errors.
  */
 function rollMovementSchedule(workbook: ExcelScript.Workbook, params: RollForwardParams) {
   const sheet = workbook.getWorksheet(SHEET_MOVEMENT)
@@ -299,20 +334,22 @@ function buildReviewReport(workbook: ExcelScript.Workbook, params: RollForwardPa
     const ok = Number(buildingsCheck) === 0 && Number(vehiclesCheck) === 0
     lines.push(`CHECK row (must be 0): buildings ${buildingsCheck}, vehicles ${vehiclesCheck} — ${ok ? 'OK' : 'NOT TYING, investigate'}`)
 
-    const differences: string[] = []
-    for (const firstRow of [BUILDINGS_FIRST_ROW, VEHICLES_FIRST_ROW]) {
+    // The Difference column is G minus the YTD build-up, so a non-zero value is
+    // exactly the extra plug column L needs for that PowerHouse to tie.
+    const plugsNeeded: string[] = []
+    for (const [label, firstRow] of [['Buildings', BUILDINGS_FIRST_ROW], ['Vehicles', VEHICLES_FIRST_ROW]] as [string, number][]) {
       const block = movement.getRange(`A${firstRow}:J${firstRow + POWERHOUSE_COUNT - 1}`).getValues()
       block.forEach((row) => {
         const difference = Number(row[9])
-        if (difference !== 0) differences.push(`${row[0]} (${difference})`)
+        if (difference !== 0) plugsNeeded.push(`${label} ${row[0]}: ${difference > 0 ? '+' : ''}${difference}`)
       })
     }
-    lines.push(differences.length === 0
-      ? 'Difference column: all zero.'
-      : `Difference column not zero for: ${differences.join(', ')}`)
+    lines.push(plugsNeeded.length === 0
+      ? 'YTD build-up ties to the 2.9 count for every PowerHouse; no plug adjustment needed.'
+      : `Extra plug needed in column L to tie to the 2.9 count — ${plugsNeeded.join(', ')}`)
   }
 
-  lines.push('Plug column L needs review — it still holds last month\'s value; column M now carries the prior-month plug.')
+  lines.push('Column M now carries last month\'s plug; column L is unchanged and is the preparer\'s to set.')
   lines.push(unmappedEntitySummary(workbook))
 
   return lines.join('\n')

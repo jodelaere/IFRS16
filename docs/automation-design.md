@@ -70,10 +70,36 @@ Beide blokken (buildings rij 3-14, vehicles rij 19-30) hebben dezelfde structuur
 | G | Huidige maand | `XLOOKUP` → `2_9 Output'!F:F` → kolom G (buildings) / H (vehicles) |
 | I | Calculated | `=SUM(B:F)` |
 | J | Difference | `=G-I` |
-| L | Plug huidige maand | **manueel** |
+| L | Plug huidige maand | **manueel** — telt op in de E-formule |
 | M | Plug vorige maand | historiek |
-| O | Vorige maand | `=SUM(H:L)`, wat neerkomt op **G + plug** |
-| P | mvt P{nn} | `=G-O`, dus **−plug** |
+| O | Vorige maand | **getypte waarde** (het vorige-maandcijfer) |
+| P | mvt P{nn} | `=G-O` — de echte maandmutatie |
+
+### Wat de plug is
+
+De plug in kolom L zit **in de Terminated contracts-formule**:
+
+```
+E8: =-IFERROR(XLOOKUP(A8,'Pivots on 2.10'!$B$27:$B$41,…),0)+L8
+```
+
+Hij reconcilieert de YTD-opbouw `B+C+D+E+F` naar de 2.9-telling in kolom G, en is
+dus het **verschil tussen de 2.10- en de 2.9-cut** — geen vorige-maand-constructie.
+
+Getoetst op P8: Covebo buildings heeft pivot OUT = 51 en plug −1, dus E = −52;
+`399+140+0−52+0 = 487 = G`, Difference = 0. Healthcare: `−13 + −2 = −15`;
+`118+8−15 = 111 = G` ✓
+
+Gevolg: de plug moet bij elke nieuwe cut opnieuw bepaald worden. De
+Difference-kolom is daarbij precies de nog benodigde plug, dus het reviewrapport
+van het script geeft per PowerHouse dat bedrag. **Bewust niet automatisch
+ingevuld** — de tie forceren zou echte datafouten maskeren.
+
+> ℹ️ In een eerdere versie was kolom O `=SUM(H3:L3)`, wat neerkwam op *huidige
+> maand + plug* en dus niet de vorige maand voorstelde. Dat is gecorrigeerd:
+> O bevat nu de werkelijke vorige-maandcijfers, waardoor `P = G − O` pas een
+> echte maandmutatie geeft. Het script vult O nu automatisch — kolom G bevat
+> immers nog de vorige maand tot de nieuwe Anaplan-data ingeladen wordt.
 
 **De maandkop staat op één plek**: `G1` en `G17` zijn formules `=K34`, dus de
 huidige-maandlabel wordt in de presentatietabel (rij 34) getypt en beide
@@ -280,6 +306,8 @@ Het script zet deze formule vanaf nu zelf bij elke nieuw gedetecteerde building.
 - Anaplan-data in `Table2.9` en `Table1` schrijven (mét tabel-resize, want de
   queries lezen die tabellen op naam; in blokken van 5.000 rijen).
 - Power Queries + alle 5 PivotTables verversen, dan volledig herrekenen.
+- Kolom G vastleggen **voor** het inladen (dat is de vorige maand) en na de
+  refresh wegschrijven naar kolom O.
 - Maandlabels rollen (`F34`/`K34`, `L1`/`M1`, `O1`/`O17`, `P1`/`P17`) en de
   plug-kolom één maand opschuiven (L → M).
 - Nieuwe buildings detecteren en voorinvullen in "BUILDINGS - NEW".
@@ -287,9 +315,9 @@ Het script zet deze formule vanaf nu zelf bij elke nieuw gedetecteerde building.
 
 ### Wat manueel blijft
 
-- **De plug in kolom L** — dat is een bewuste correctie van de preparer. Het
-  script bewaart de vorige waarde in kolom M en laat L staan ter review; het
-  verzint er geen.
+- **De plug in kolom L** — het reconciliatieverschil tussen de 2.10- en 2.9-cut.
+  Het script bewaart de vorige waarde in kolom M, laat L staan, en meldt per
+  PowerHouse hoeveel plug er nog nodig is om te sluiten.
 - **Beoordeling van de nieuwe contracten** in "BUILDINGS - NEW".
 - **De Entity List-refresh.** De connectie is een live MSOLAP-verbinding
   (`Provider=MSOLAP.8; Data Source=pbiazure://api.powerbi.com;
@@ -326,6 +354,8 @@ rijen op de `Entity List PowerBI`-tab.
 
 ## Openstaande vragen
 
-1. Moet de plug in kolom L leeggemaakt worden bij de roll, of blijft de vorige
-   waarde staan als vertrekpunt? Het script laat hem nu staan en vlagt hem.
-2. Wordt P8 2026 herzien voor de Lease Liability-correctie (bevinding 5)?
+1. In P8 staat de Lease Liability van rij 19 nu als `=H19*12` (hardcoded aantal
+   kwartalen). Werkt, maar de generieke variant
+   `=H19*G19/IFS(I19="Monthly",1,I19="Quarterly",3)` blijft kloppen bij elke
+   looptijd en frequentie, en geeft `#N/A` in plaats van een stil verkeerd
+   cijfer bij een onbekende frequentie. Overnemen in de template?
