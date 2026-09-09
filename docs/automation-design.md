@@ -1,193 +1,275 @@
 # IFRS16 Monthly Roll-Forward — Automation Design
 
-## Doel
+Automatisering van de maandelijkse update van het IFRS16 Input Board Pack, via een
+Office Script (draait in de echte Excel-rekenmachine) getriggerd door Power Automate.
 
-Automatiseer de maandelijkse update van het IFRS16 Input Board Pack met behulp van
-een Office Script (draait in de echte Excel Online-rekenmachine, dus "Refresh All"
-en pivottabellen werken) getriggerd via Power Automate.
+Alles in dit document is geverifieerd tegen
+`202608 - IFRS16 - 3 - Input Board Pack.xlsx` (P8 2026) — tabnamen, tabelnamen,
+celverwijzingen, formules, Power Query M-code en de connecties.
 
-## Vastgestelde SharePoint-structuur
+## SharePoint-structuur
 
-Site: `behohr-finance` (https://houseofhr.sharepoint.com/sites/behohr-finance)
-
-```
-Consolidation  annual statements/
-  {jaar}/
-    P{periode} {jaar}/                         (bv. "P8 2026", ook gezien als "P08.2025")
-      IFRS 16/
-        {yyyymm} - IFRS16 - 1 - Entity list Power BI - To refresh.xlsx
-        {yyyymm} - IFRS16 - 2 - Review Anaplan vs Fluence.xlsx
-        {yyyymm} - IFRS16 - 3 - Input Board Pack.xlsx      <-- doelbestand van deze automatisering
-        {yyyymm} - IFRS16 - {PowerHouse} - Verschillen ...xlsx  (per PowerHouse, o.a. Accent, Cohedron)
-        {yyyymm} - IFRS16 - Export 3.5 - DD{ddmmyyyy}.xlsx
-        Anaplan Exports 2.92.10/
-          Updated Lease properties (2).xlsx    <-- bron voor "2.9 input"
-          Updated Lease properties (3).xlsx    <-- bron voor "2.10 input"
-        Service PH/
-```
-
-Let op: de maand-submap-conventie is niet 100% consistent over de jaren heen
-("P8 2026" vs "P08.2025" vs "P09-2025"); de Power Automate flow moet hierop
-robuust zoeken (bv. op basis van periodenummer + jaar, niet exacte string-match).
-
-## Bevestigde structuur "Input Board Pack.xlsx" (9 tabbladen totaal)
-
-Twee tabbladen volledig ingelezen; de overige 7 (`2.9 input`, `2.10 input`,
-`2_9 Output`, `2.10 Output`(?), `Pivots on 2.10`, en 2 andere) kon ik niet volledig
-inlezen — de SharePoint-tekstextractie knipt af bij grote workbooks. Onderstaand
-is wat we zeker weten, plus wat nog bevestigd moet worden.
-
-### Tab "Mvt Schedule Details"
-- Bovenaan: telling nieuwe contracten per PowerHouse (Buildings/Vehicles) voor de lopende periode (`mvt P08`).
-- Tabel "BUILDINGS - NEW" (rij 18-25 in augustus-versie): kolommen
-  `Key | Entity | Lease description | Lease commencement date | Reasonably certain end date selection | Reasonably certain end date | Lease duration | Fixed payment | Payment frequency | Asset category | Leased capacity | Lease Liability`.
-  `Lease Liability` = `Fixed payment * Leased capacity` (kolom L = H*G in het voorbeeld — let op: dit lijkt een vereenvoudigde formule, geen echte discontering; te bevestigen).
-  Er is een vergelijkbare tabel te verwachten voor "VEHICLES - NEW" (niet gezien in de uitgeknipte dump, maar de structuur boven refereert er impliciet naar).
-- **Open vraag**: waar komt de rij-key (bv. `1109__Antwerpen_JVG7`) vandaan, en wat is exact de regel om te bepalen dat een contract "nieuw deze maand" is? Voorstel (zie script): een contract in de Anaplan-export met `Lease commencement date` in de huidige rapportageperiode én dat nog niet voorkomt in de bestaande "BUILDINGS/VEHICLES - NEW"-lijst van vorige maand.
-
-### Tab "Movement schedule"
-- Rij 1 = headers. Kolom G1 bevat een **formule** `=K34` (dus de "August 2026"-tekst
-  is al automatisch gekoppeld aan een brondatum in K34 — dit hoeft niet handmatig
-  aangepast te worden). Kolom G17 verwijst naar dezelfde cel.
-- Kolommen K ("Plug 08 2026") en L ("Plug 07 2026") lijken **handmatige
-  correctie-cijfers** (geen formule zichtbaar in de dump) — dit zijn vermoedelijk
-  bewuste manuele boekingen door de preparer, dus NIET automatiseerbaar zonder
-  menselijk oordeel. Voorstel: deze blijven een manuele stap; het script laat ze
-  onaangeroerd en labelt ze in een reviewmail.
-- Kolom N ("July 2026") en O ("mvt P08") lijken **statische tekst-headers** die elke
-  maand handmatig verschoven worden (dit is vermoedelijk de "paar kolommen
-  onderaan" die je noemde). **Te bevestigen**: of dit puur label-tekst is (veilig
-  te scripten: N1 krijgt de waarde van het huidige G1, O1 wordt "mvt P{nieuwe
-  periode}") of dat er ook celverwijzingen mee verschuiven.
-- De cijfers per PowerHouse worden via `XLOOKUP` opgehaald uit `Pivots on 2.10`
-  (aantallen) en `2_9 Output` (bedragen/totaal). Zodra `2.10 input`/`2.9 input`
-  zijn overschreven en de pivottabellen ververst zijn, updaten deze automatisch —
-  **geen** handmatige actie nodig als Office Script `pivotTable.refresh()` en
-  `application.calculate(FullRebuild)` aanroept.
-
-### Tabs "2.9 input" / "2.10 input" (niet rechtstreeks ingelezen)
-Op basis van je beschrijving ("we overwriten de data in 2.10 en 2.9 input tabs
-met de nieuwe excel geëxporteerd uit Anaplan") ga ik ervan uit dat deze tabs
-1-op-1 dezelfde 28 kolommen hebben als de Anaplan-export
-(`Updated Lease properties (2)/(3).xlsx`, tabblad "Sheet 1"):
+Site: `behohr-finance`
 
 ```
-Entity, Lease description, Cost Center, Local Cost center code,
-Lease commencement date, Purchase option?, Exercise of Purchase option date,
-Exercise price of purchase option, Reasonably certain end date selection,
-Reasonably certain end date, Transfer IN Date, Transfer Out Date,
-Lease duration, Fixed payment, Payment frequency,
-Payment at beginning of period?, Revision type, Index or Rate,
-Lease revision frequency (months), First revision after (months),
-Reference index/rate date, Provision for dismantling costs, Status,
-Last modification status, Asset category, Leased capacity, Type motor
+Consolidation  annual statements/{jaar}/P{periode} {jaar}/IFRS 16/
+  {yyyymm} - IFRS16 - 1 - Entity list Power BI - To refresh.xlsx
+  {yyyymm} - IFRS16 - 2 - Review Anaplan vs Fluence.xlsx
+  {yyyymm} - IFRS16 - 3 - Input Board Pack.xlsx      <-- doelbestand
+  {yyyymm} - IFRS16 - Export 3.5 - DD{ddmmyyyy}.xlsx
+  Anaplan Exports 2.92.10/
+    Updated Lease properties (2).xlsx    -> 2.9 Input   (11.329 rijen)
+    Updated Lease properties (3).xlsx    -> 2.10 Input  (24.617 rijen)
 ```
 
-**Te bevestigen**: exacte kolomvolgorde/naam in `2.9 input`/`2.10 input` zelf
-(kan afwijken als er een extra sleutel-kolom is toegevoegd), en het beginpunt
-(rij 1 = headers, rij 2 = eerste data-rij aangenomen).
+Map- en bestandsnamen zijn **niet consistent** over de maanden heen
+(`P5 2026/IFRS16` vs `P8 2026/IFRS 16`; `2026.06 - …`, `#2026.07 - …`,
+`202608 - …`). De flow moet dus zoeken op periode + jaar, niet op exacte string.
 
-### Entity list (bron: MDM via Power BI)
+## Opbouw van het Input Board Pack (10 tabbladen)
 
-Naast de Anaplan-exports is er een derde brontabel, aangeleverd via
-`{yyyymm} - IFRS16 - 1 - Entity list Power BI - To refresh.xlsx` (in dezelfde
-`IFRS 16`-map). Dit bestand bevat een Power BI-connectie naar dataset
-**BEHOHR-FDP-PRD-FINANCE**, tabel "18. Legal Entity Dimension" — de instructie
-staat letterlijk in het bestand: *"1) REFRESH POWER BI TABLE FOR NEW ENTITIES
-EVERY MONTH"*. Deze dimensie wordt uiteindelijk gevoed vanuit **MDM** (Master
-Data Management) en bevat:
+| # | Tab | Inhoud |
+|---|---|---|
+| 1 | `Mvt Schedule Details` | Aantal nieuwe contracten per PowerHouse (rijen 3-14) + detailtabel "BUILDINGS - NEW" (rij 18+) |
+| 2 | `Movement schedule` | De movement schedule zelf: 2 blokken (buildings rij 3-14, vehicles rij 19-30) + presentatietabel rij 33-47 + CHECK rij 49 |
+| 3 | `Pivots on 2.10` | 4 PivotTables (IN / OUT / TRANSFER IN / TRANSFER OUT) + formuleblok Transfers |
+| 4 | `2_10 Output` | Power Query-output, Excel-tabel `_2_10_Output` (A1:R24618) |
+| 5 | `2.10 Input` | Anaplan-export, Excel-tabel `Table1` (A1:AB24618) |
+| 6 | `2_9 Output` | Power Query-output, tabel `_2_9_Output` (A2:D157) + PivotTable in F2:I16 |
+| 7 | `2.9 Input` | Anaplan-export, Excel-tabel `Table2.9` (A1:AB11330) |
+| 8 | `Info` | Documentatie van de 2.9-selectielogica |
+| 9 | `Entity List` | **Hard copy** van de entiteitenlijst (4 kolommen, rij 3+) — hier kijken alle lookups naar |
+| 10 | `Entity List PowerBI` | Nieuw toegevoegd: live Power BI-connectie, tabel `Table_ExternalData_1` (A3:S361) |
+
+### De dataflow
 
 ```
-Legal Entity Code | Legal Entity Description | LE Powerhouse | LE Boutique | PH Fluence
+Anaplan export (2) ──> 2.9 Input  (Table2.9) ──PQ──> 2_9 Output ──> PivotTable2 (F2:I16)
+                                                                          │
+Anaplan export (3) ──> 2.10 Input (Table1)   ──PQ──> 2_10 Output ──> 4 PivotTables
+                                                                          │
+Entity List (kolom C = PowerHouse) ──XLOOKUP──> PH-kolom in beide outputs │
+                                                                          v
+                                                        Movement schedule (XLOOKUP)
+                                                                          v
+                                                        Presentatietabel rij 33-47
 ```
 
-plus een klein los mappingtabelletje (kolom G/H) `FDP/Anaplan-naam ↔ Fluence-naam`
-voor PowerHouse-namen die tussen de twee systemen verschillen (bv. "ABY
-Engineering" ↔ "House of ABY").
+### Movement schedule — kolomindeling
 
-Deze tabel wordt maandelijks (1) ververst vanuit Power BI/MDM in dit losse
-bestand, en (2) gekopieerd naar de **"Entity list"-tab** in het Input Board
-Pack. Die tab wordt vervolgens gebruikt (vermoedelijk via XLOOKUP/VLOOKUP op
-Legal Entity Code) in de "2.9 Output"/"2.10 Output"-tabs om elke leaseregel aan
-de juiste PowerHouse te koppelen — dit is dus de schakel die de aantallen in
-"Pivots on 2.10" en "Movement schedule" per PowerHouse correct laat optellen.
+Beide blokken (buildings rij 3-14, vehicles rij 19-30) hebben dezelfde structuur:
 
-### ✅ Gekozen aanpak: Power BI-connectie ín het Input Board Pack
+| Kolom | Inhoud | Herkomst |
+|---|---|---|
+| A | PowerHouse | vast |
+| B | December 2025 (opening) | `=B35` / `=G35` — uit de presentatietabel |
+| C | New contracts | `XLOOKUP` → `Pivots on 2.10'!$B$6:$B$19` |
+| D | M&A | hardcoded 0 |
+| E | Terminated contracts | `-XLOOKUP` → `$B$27:$B$41` |
+| F | Transfers between PHs | `XLOOKUP` → `$B$81:$B$91` |
+| G | Huidige maand | `XLOOKUP` → `2_9 Output'!F:F` → kolom G (buildings) / H (vehicles) |
+| I | Calculated | `=SUM(B:F)` |
+| J | Difference | `=G-I` |
+| L | Plug huidige maand | **manueel** |
+| M | Plug vorige maand | historiek |
+| O | Vorige maand | `=SUM(H:L)`, wat neerkomt op **G + plug** |
+| P | mvt P{nn} | `=G-O`, dus **−plug** |
 
-**Beslissing**: de Power BI-connectie wordt verplaatst naar de "Entity
-list"-tab van het Input Board Pack zelf. Het losse maandbestand
-`Entity list Power BI - To refresh.xlsx` blijft bestaan als archief/snapshot,
-maar is geen schakel meer in de dataflow. "Refresh All" in het board pack
-werkt de entity list dan rechtstreeks bij.
+**De maandkop staat op één plek**: `G1` en `G17` zijn formules `=K34`, dus de
+huidige-maandlabel wordt in de presentatietabel (rij 34) getypt en beide
+blokheaders volgen automatisch. Dit is de "paar kolommen onderaan" uit de
+procesbeschrijving.
 
-#### Waarom niet via een externe verwijzing naar het losse bestand
+`B34`/`G34` ("December 2025") en `B35:B46`/`G35:G46` zijn de jaaropening en
+blijven het hele jaar staan.
 
-Een externe werkmapkoppeling (`='https://…/[Entity list….xlsx]Sheet1'!A1`) lijkt
-de voor de hand liggende oplossing, maar breekt in deze setup op drie punten:
+### Mvt Schedule Details
 
-1. **De bestandsnaam wijzigt elke maand** — vastgesteld over P4–P8:
-   `2026.04 - Entity list to refresh.xlsx` → `2026.05 - IFRS16 - 1 - Entity list Power BI - To refresh.xlsx`
-   → `2026.06 - …` → `#2026.07 - …` (met `#`-prefix) → `202608 - …` (ander
-   datumformaat). Ook de mapnaam varieert: `P5 2026/IFRS16` (zonder spatie) vs.
-   `P8 2026/IFRS 16` (met spatie). Elke koppeling op naam/pad moet dus sowieso
-   maandelijks handmatig opnieuw gericht worden.
-2. **Kopiëren naar de nieuwe maand breekt het stilzwijgend** — SharePoint-links
-   worden als absolute URL opgeslagen, dus een board pack dat van P8 naar P9
-   gekopieerd wordt blijft naar het *P8*-bestand wijzen. Geen foutmelding, wel
-   vorige maand haar data.
-3. **Office Scripts kan externe werkmapkoppelingen niet verversen** — er is geen
-   API voor. `application.calculate()` herrekent op *gecachte* externe waarden.
-   De automatiseringsstap zou dus niets ophalen.
+- Rijen 3-14: aantal nieuwe contracten per PowerHouse, buildings (kolom B) en
+  vehicles (kolom E). **Nu hardcoded getypt** — gelijk aan `Movement schedule`
+  kolom P. `E15` is zelfs een hardcoded 21 in plaats van een `SUM`.
+- Rij 18+: tabel "BUILDINGS - NEW" met kolommen
+  `key | Entity | Lease description | commencement | end date selection | end date | duration | fixed payment | frequency | asset category | leased capacity | Lease Liability`.
+  `Lease Liability` = `=H*G` (fixed payment × duration).
+- **Er is géén "VEHICLES - NEW"-tabel.** Vehicles worden geteld, niet
+  gedetailleerd — conform het proces zoals beschreven.
 
-Een connectie ín de werkmap heeft geen van die drie problemen: ze reist mee bij
-het kopiëren naar de nieuwe maandmap, kent geen pad- of naamafhankelijkheid, en
-is programmatisch aanspreekbaar.
+## Bevindingen
 
-#### Status: uitgevoerd in P8 2026
+### 1. ⚠️ De rapportageperiode komt uit de systeemklok
 
-De verbinding is toegevoegd aan `202608 - IFRS16 - 3 - Input Board Pack.xlsx`
-(P8-map), op de tab **"Entity List PowerBI"**. Dat bestand is daarmee de
-template die vanaf nu elke maand mee gekopieerd wordt.
+De Power Query M-code leidt de rapportagemaand af uit `DateTime.LocalNow()`:
 
-Nog te bevestigen op die tab:
-- "Refresh All" geeft **358 rijen** (stand P8 2026) — de tegentest tegen de
-  gevalideerde DAX-query.
-- Kolomvolgorde A–D = `Legal Entity Code | Legal Entity Description |
-  LE Powerhouse | LE Boutique`, zoals in het bronbestand. Het script leest
-  kolom A/B/C terug om niet-gemapte entiteiten te signaleren.
-- De `PH FLUENCE`-formule en het `FDP/Anaplan ↔ Fluence`-mappingtabelletje
-  staan mee op de tab (Excel-logica, geen Power BI-kolommen).
+```m
+"New leases before and in current month (IN)" =
+    each Date.Month([Lease commencement date]) <= Date.Month(DateTime.LocalNow())-1
+```
 
-> ⚠️ Als er al een P9-board pack gekopieerd was **vóór** deze wijziging, bevat
-> die kopie de verbinding niet — opnieuw kopiëren vanaf de bijgewerkte
-> P8-versie, of de verbinding daar apart toevoegen.
+De conventie is dus: *refresh in maand M → rapportagemaand M−1*. Gevolgen:
 
-> ⚠️ **Nog te testen**: of een Power BI-verbinding (Analysis Services) ook
-> ververst kan worden vanuit een Office Script / Power Automate-context, of dat
-> daar één handmatige "Refresh All" nodig blijft. Office Scripts heeft
-> `refreshAllPowerQueries()` en `pivotTable.refresh()`, maar credential-handling
-> voor een live Power BI-verbinding onder een service account is niet bevestigd.
-> Als dat niet lukt, blijft alleen de refresh handmatig — alle overige stappen
-> in de flow blijven wel geautomatiseerd.
+- **Niet reproduceerbaar.** Wie het P8-pack in oktober opent en Refresh All doet,
+  krijgt september-cijfers in het augustus-pack. Een afgesloten board pack dat
+  verandert wanneer je het later opent, is een controleprobleem.
+- **De decemberafsluiting breekt.** Voor P12 refresh je in januari:
+  `Date.Month(now)-1` = `1-1` = **0**. Geen enkel contract heeft maand ≤ 0, dus
+  new contracts en terminated contracts worden allemaal 0 — precies bij de
+  jaarafsluiting.
+- **Het script kan de maand niet besturen.** Zolang de queries de klok gebruiken,
+  kan de automatisering niet bepalen welke periode ze berekenen. Dit is dus geen
+  losse verbetering maar een **randvoorwaarde** voor de automatisering.
 
-#### Referentie: rechtstreekse DAX-query (gevalideerd, als alternatief)
+De oplossing staat bij de eenmalige template-wijzigingen hieronder.
 
-Mocht bovenstaande connectie in de praktijk niet automatisch te verversen zijn,
-dan is dit de gevalideerde terugvaloptie: de entity list rechtstreeks ophalen
-met een DAX-query vanuit Power Automate.
+### 2. ⚠️ De nieuwe "Entity List PowerBI"-tab is nog niet aangesloten
 
-**Belangrijk — gebruik het Treasury-model, niet het FDP-model rechtstreeks:**
+Beide output-tabs halen de PowerHouse nog uit de **oude** hard copy:
+
+```
+2_9 Output!D3  =XLOOKUP(A3, 'Entity List'!A:A, 'Entity List'!C:C)
+2_10 Output!R2 =XLOOKUP(Q2, 'Entity List'!A:A, 'Entity List'!C:C)
+```
+
+De nieuwe tab heeft de PowerHouse in **kolom F** (kolom C is `LE Country Long`)
+en begint op rij 4. Bovendien heeft de oude tab 356 datarijen en de nieuwe 358 —
+de hard copy loopt dus twee entiteiten achter.
+
+### 3. ⚠️ Het Transfers-blok koppelt rijen op positie
+
+`Pivots on 2.10` rijen 82-91 berekenen transfers als `=C50-C68`, `=C51-C69`, …:
+harde celverwijzingen naar TRANSFER IN (rij 50-59) en TRANSFER OUT (rij 68-77).
+Die twee pivots tonen **alleen PowerHouses die deze maand transfers hebben**.
+Deze maand hebben beide exact dezelfde 9 PowerHouses, dus het klopt. Zodra een
+PowerHouse alleen transfers *in* of alleen *uit* heeft, verschuiven de rijen en
+trekt de formule stilzwijgend de verkeerde PowerHouse af.
+
+Idem voor de lookup-ranges: `$B$6:$B$19` sluit precies aan op PivotTable3
+(B6:E20, 12 PowerHouses + Grand Total) — **geen marge**. Een 13e PowerHouse laat
+de pivot groeien en de lookup mist hem (via `IFERROR` → 0, dus zonder foutmelding).
+
+### 4. Transfers zijn niet begrensd op de rapportagemaand
+
+`Transfers (IN)` en `Transfers (OUT)` gebruiken enkel `Date.IsInCurrentYear(...)`,
+zonder maandgrens — in tegenstelling tot de IN/OUT-vlaggen. Een transfer gedateerd
+december 2026 telt dus mee in het augustus-pack. Per PowerHouse compenseren die
+niet noodzakelijk. **Vraag: is dat bewust?**
+
+### 5. Lease Liability bij niet-maandelijkse betalingen
+
+`Lease Liability` = `fixed payment × lease duration (maanden)`. Voor maandelijkse
+contracten is dat de (niet-gedisconteerde) totale huur. Voor het ene kwartaal-
+contract in P8 (rij 19: € 13.663,75 per kwartaal, 36 maanden) geeft dat
+€ 491.895, terwijl 12 kwartalen × € 13.663,75 = € 163.965 — een factor 3.
+**Vraag: is dat bewust, of moet de frequentie meegerekend worden?**
+
+## Eenmalige template-wijzigingen
+
+Uit te voeren in Excel Desktop op het P8-bestand, dat daarna de template is die
+elke maand meekopieert.
+
+### A. Rapportageperiode als parameter (randvoorwaarde, zie bevinding 1)
+
+1. Zet op de `Info`-tab een cel met de periode-einddatum (bv. `B7` = `31/08/2026`)
+   en geef die de naam **`ReportingPeriodEnd`** (Formulas → Define Name).
+2. Vervang in beide queries (Data → Queries → Edit) `DateTime.LocalNow()` door
+   die parameter. Voeg bovenaan elke `let` toe:
+
+```m
+ReportingPeriodEnd = Date.From(Excel.CurrentWorkbook(){[Name="ReportingPeriodEnd"]}[Content]{0}[Column1]),
+```
+
+3. Pas de vlaggen aan — let op: de `-1` verdwijnt, omdat de parameter *in* de
+   rapportagemaand ligt en `LocalNow()` in de maand erna lag:
+
+| Query | Was | Wordt |
+|---|---|---|
+| 2/10 | `Date.IsInCurrentYear([Lease commencement date])` | `Date.Year([Lease commencement date]) = Date.Year(ReportingPeriodEnd)` |
+| 2/10 | `Date.Month([Lease commencement date]) <= Date.Month(DateTime.LocalNow())-1` | `Date.Month([Lease commencement date]) <= Date.Month(ReportingPeriodEnd)` |
+| 2/10 | `Date.IsInCurrentYear([Reasonably certain end date])` | `Date.Year([Reasonably certain end date]) = Date.Year(ReportingPeriodEnd)` |
+| 2/10 | `Date.Month([Reasonably certain end date]) <= Date.Month(DateTime.LocalNow())-1` | `Date.Month([Reasonably certain end date]) <= Date.Month(ReportingPeriodEnd)` |
+| 2/10 | `Date.IsInCurrentYear([Transfer IN Date])` / `[Transfer Out Date]` | `Date.Year(…) = Date.Year(ReportingPeriodEnd)` |
+| 2/9 | `Date.IsInCurrentYear([Lease commencement date])` | `Date.Year(…) = Date.Year(ReportingPeriodEnd)` |
+| 2/9 | `Date.Month([Lease commencement date]) >= Date.Month(DateTime.LocalNow())` | `Date.Month([Lease commencement date]) > Date.Month(ReportingPeriodEnd)` |
+| 2/9 | `Date.IsInCurrentYear([Reasonably certain end date])` | `Date.Year(…) = Date.Year(ReportingPeriodEnd)` |
+| 2/9 | `Date.Month([Reasonably certain end date]) <= Date.Month(DateTime.LocalNow())-1` | `Date.Month([Reasonably certain end date]) <= Date.Month(ReportingPeriodEnd)` |
+
+4. Controle: zet `ReportingPeriodEnd` op `31/08/2026`, Refresh All, en vergelijk
+   met het huidige P8-resultaat. De cijfers moeten identiek zijn.
+
+### B. Entity List aansluiten op de Power BI-tab (bevinding 2)
+
+Laat de lookups ongemoeid (24.000+ formules) en voed de oude tab uit de nieuwe.
+Zet in `Entity List` op rij 3 en vul door tot rij 360:
+
+```
+A3  ='Entity List PowerBI'!A4
+B3  ='Entity List PowerBI'!B4
+C3  ='Entity List PowerBI'!F4     <-- F, niet C
+D3  ='Entity List PowerBI'!G4
+```
+
+### C. Mvt Schedule Details koppelen (haalt een manuele stap weg)
+
+```
+B3  ='Movement schedule'!P3    … doorvullen tot B14 (=P14)
+E3  ='Movement schedule'!P19   … doorvullen tot E14 (=P30)
+E15 =SUM(E3:E14)
+```
+
+### D. Marge in het Transfers-blok (bevinding 3)
+
+Vervang de positionele `=C50-C68` door een lookup op PowerHouse-naam, zodat de
+berekening blijft kloppen als de pivotrijen verschuiven:
+
+```
+C82  =IFERROR(XLOOKUP($B82,$B$49:$B$59,C$49:C$59),0) - IFERROR(XLOOKUP($B82,$B$67:$B$77,C$67:C$77),0)
+```
+
+## Power Automate flow
+
+1. **Trigger**: nieuw bestand in `Anaplan Exports 2.92.10` van de lopende periode,
+   of maandelijkse planning na sluiting Anaplan.
+2. **Kopieer** het board pack van de vorige periode naar de nieuwe periodemap.
+3. **Zet** `ReportingPeriodEnd` op de nieuwe periode-einddatum (kan in het script).
+4. **Lees** de twee Anaplan-exports in ("List rows present in a table").
+5. **Run script** `ifrs16-monthly-rollforward.ts` met de twee rijenreeksen +
+   `periodEndDate`, `newMonthLabel`, `previousMonthLabel`, `newPeriodCode`.
+   Het script retourneert een reviewrapport.
+6. **Notificatie** met dat rapport: CHECK-rij, afwijkingen in de Difference-kolom,
+   nieuwe gedetecteerde buildings, niet-gemapte entiteiten, en de herinnering dat
+   de plug-kolom nog nagekeken moet worden.
+
+### Wat het script doet
+
+- Anaplan-data in `Table2.9` en `Table1` schrijven (mét tabel-resize, want de
+  queries lezen die tabellen op naam; in blokken van 5.000 rijen).
+- Power Queries + alle 5 PivotTables verversen, dan volledig herrekenen.
+- Maandlabels rollen (`F34`/`K34`, `L1`/`M1`, `O1`/`O17`, `P1`/`P17`) en de
+  plug-kolom één maand opschuiven (L → M).
+- Nieuwe buildings detecteren en voorinvullen in "BUILDINGS - NEW".
+- Reviewrapport teruggeven.
+
+### Wat manueel blijft
+
+- **De plug in kolom L** — dat is een bewuste correctie van de preparer. Het
+  script bewaart de vorige waarde in kolom M en laat L staan ter review; het
+  verzint er geen.
+- **Beoordeling van de nieuwe contracten** in "BUILDINGS - NEW".
+- **De Entity List-refresh.** De connectie is een live MSOLAP-verbinding
+  (`Provider=MSOLAP.8; Data Source=pbiazure://api.powerbi.com;
+  Integrated Security=ClaimsToken`), geen Power Query. Die vraagt een
+  interactieve AAD-token en is vrijwel zeker niet onbemand te verversen.
+  Alternatief voor volledige automatisering: Power Automate haalt de lijst op met
+  de gevalideerde DAX-query hieronder en het script schrijft de waarden weg.
+
+### Gevalideerde DAX-query (alternatief voor de Entity List-refresh)
+
+Het FDP-model geeft `ArtifactAccessDenied`; het **Treasury-model** DirectQuery't
+dezelfde FDP-tabellen en werkt wel.
 
 | Route | artifactId | Resultaat |
 |---|---|---|
-| FDP-model `BEHOHR-FDP-PRD-FINANCE` (workspace `54172bbd-…`) | `5764f6b0-e1e1-426e-9417-790422fa6e62` | ❌ `ArtifactAccessDenied` (403) |
-| Treasury-model `HOHR Treasury Report - FDP` (workspace `BEHOHR-FIN-PRD-REPORTS`, `4505ccf4-…`) | `68d39a44-643a-40ce-bfb2-cbf6e2a0e3c6` | ✅ werkt |
-
-Het Treasury-model DirectQuery't alle FDP-tabellen, dus `'18. Legal Entity
-Dimension'` is daar gewoon beschikbaar. Er is dus **geen extra Build-permissie
-of access request nodig** — enkel de juiste artifactId.
-
-**Gevalideerde query:**
+| `BEHOHR-FDP-PRD-FINANCE` | `5764f6b0-e1e1-426e-9417-790422fa6e62` | ❌ 403 |
+| `HOHR Treasury Report - FDP` | `68d39a44-643a-40ce-bfb2-cbf6e2a0e3c6` | ✅ werkt |
 
 ```dax
 EVALUATE
@@ -195,83 +277,19 @@ SELECTCOLUMNS('18. Legal Entity Dimension',
   "Code",        '18. Legal Entity Dimension'[Legal Entity Code],
   "Description", '18. Legal Entity Dimension'[Legal Entity Description],
   "Powerhouse",  '18. Legal Entity Dimension'[LE Powerhouse],
-  "Boutique",    '18. Legal Entity Dimension'[LE Boutique],
-  "Active",      '18. Legal Entity Dimension'[LE Active])
+  "Boutique",    '18. Legal Entity Dimension'[LE Boutique])
 ```
 
-**Validatie tegen het huidige Excel-bestand** (P8 2026): de query geeft
-**358 entiteiten**, 13 PowerHouses, 76 boutiques — exact hetzelfde aantal als
-de 361 rijen in het Excel-bestand min de 3 header/instructie-rijen. Steekproef
-van waarden matcht 1-op-1 (1001 House of HR NV → House of Support/House of
-Support; 1004 House of Invest NV → House of Support/House of Invest; -1
-_Third Party (External) → N/A).
+Gevalideerd: 358 entiteiten, 13 PowerHouses, 76 boutiques — exact het aantal
+rijen op de `Entity List PowerBI`-tab.
 
-> ⚠️ **Geen `LE Active`-filter toepassen hier.** Voor P&L-cijfers schrijft de
-> FDP-skill voor om `LE Active = "NO"`/`"ONGOING_INTEGRATION"` uit te filteren,
-> maar dit is een **mapping-tabel**, geen financiële aggregatie: een entiteit
-> die niet meer actief is kan nog steeds lopende of historische leasecontracten
-> hebben in de Anaplan-export. Filteren zou die contracten zonder PowerHouse
-> achterlaten. Haal dus de volledige lijst op (inclusief de `null`-waarde bij
-> `-1 _Third Party (External)`).
+> ⚠️ **Geen `LE Active`-filter.** Voor P&L-cijfers hoort die filter er wel, maar
+> dit is een mapping-tabel: een niet-actieve entiteit kan nog lopende of
+> historische leases hebben, en filteren laat die contracten zonder PowerHouse.
 
-**De "PH FLUENCE"-kolom is Excel-logica, geen Power BI-kolom.** In het huidige
-bestand zijn kolommen A–D de Power BI query-output (headers dragen het prefix
-`18. Legal Entity Dimension[...]`), terwijl kolom E ("PH FLUENCE") géén prefix
-heeft: dat is een Excel-formule die de PowerHouse-naam opzoekt in het kleine
-mappingtabelletje in kolom G/H (`FDP / Anaplan` ↔ `Fluence`). Die mapping is
-statisch en moet dus **behouden** blijven in de automatisering — de DAX-query
-levert alleen A–D, kolom E blijft een afgeleide lookup.
+## Openstaande vragen
 
-### Tabs "Pivots on 2.10" en "2_9 Output"
-Niet ingelezen. Op basis van de XLOOKUP-formules in "Movement schedule" weten we:
-- `Pivots on 2.10!B6:B19` / `C6:C19` = PowerHouse-naam → aantal (blok 1)
-- `Pivots on 2.10!B27:B41` / `C27:C41` = PowerHouse-naam → aantal (blok 2, "Terminated")
-- `Pivots on 2.10!B81:B91` / `C81:C91` = PowerHouse-naam → aantal (blok 3, "Transfers")
-- `2_9 Output!F:F` (PowerHouse-naam) → `G:G`/`H:H` (totaal huidige/vorige periode)
-
-Dit is vermoedelijk een echte Excel PivotTable gebouwd op `2.10 input`
-(vandaar de naam). **Te bevestigen** door iemand met het bestand open: is dit
-een native PivotTable-object (dan volstaat `pivotTable.refresh()`), of een
-handmatig opgebouwde tabel met formules?
-
-## Automatiseringsstappen (Power Automate flow)
-
-1. **Trigger**: nieuw/gewijzigd bestand in `Anaplan Exports 2.92.10` van de
-   lopende periode-map (of een vaste tijdsplanning, bv. 1x per maand na sluiting Anaplan).
-2. **Nieuwe maandmap aanmaken**: kopieer de volledige `IFRS 16`-map (of specifiek
-   het Input Board Pack-bestand) van de vorige periode naar de nieuwe periode-map
-   (`sharepoint_copy_item`-achtige actie, native Power Automate "Copy file").
-3. **Entity list**: geen aparte flow-stap meer — de Power BI-connectie zit in het
-   board pack zelf en wordt meegenomen in de refresh van stap 5. Het losse
-   `Entity list Power BI - To refresh.xlsx`-bestand blijft enkel als
-   maandelijkse snapshot/archief bestaan.
-4. **Anaplan-data inladen**: lees de twee nieuwe exportbestanden (als tabel, via
-   "List rows present in a table" — vereist dat de export als Excel-tabel is
-   opgemaakt, of via een tussenstap die er een tabel van maakt).
-5. **Office Script uitvoeren** op het gekopieerde Input Board Pack-bestand met
-   als parameters: de ingelezen Anaplan-rijen (2x) en de nieuwe/vorige
-   periodelabels. Het script ververst ook de Power Query-/Power BI-verbindingen
-   (entity list) en de pivottabellen. Zie `scripts/ifrs16-monthly-rollforward.ts`.
-6. **Notificatie**: stuur een mail/Teams-bericht met (a) de gedetecteerde nieuwe
-   contracten die zijn voorgevuld in "Mvt Schedule Details" ter review, (b) een
-   herinnering om de "Plug"-kolommen en eventuele header-kolommen (N/O)
-   handmatig te controleren, (c) het resultaat van de CHECK-rij (moet 0 zijn),
-   (d) een waarschuwing bij nieuwe entiteiten in de entity list die nog geen
-   PowerHouse-mapping hebben (`N/A` of leeg) — die moeten in MDM aangevuld
-   worden voor de aantallen correct optellen.
-
-## Openstaande punten voor validatie (graag bevestigen voor ik het script afrond)
-
-1. Exacte rol van cel `K34` (Movement schedule) — wat staat erin en hoe wordt het gevuld?
-2. Zijn "Pivots on 2.10" en "2_9 Output"/"2.10 Output" native PivotTables of formule-tabbladen?
-3. Exacte kolomstructuur van "2.9 input"/"2.10 input" tabs (headers + startrij).
-4. Bevestig de "VEHICLES - NEW"-tabel in "Mvt Schedule Details" (locatie/kolommen), aangezien die niet in de ingelezen data zat.
-5. Is de kolomverschuiving in "Movement schedule" (N/O headers, evt. toevoegen nieuwe kolom elke maand) puur tekst, of moeten er ook formules mee verschoven worden?
-6. Exacte locatie/kolomstructuur van de "Entity list"-tab in het Input Board Pack zelf (aangenomen: zelfde kolommen als "Legal Entity Dimension", zie hierboven), en hoe "2.9 Output"/"2.10 Output" die precies opzoeken (welke kolom, exacte range).
-7. Kan de Power BI-verbinding in het board pack ververst worden vanuit een Office Script / Power Automate onder een service account? Zo niet, blijft die ene refresh handmatig (de rest van de flow blijft geautomatiseerd), of vallen we terug op de DAX-query hierboven.
-
-### ✅ Opgelost / beslist
-
-- ~~Entity list via een externe verwijzing naar `Entity list Power BI - To refresh.xlsx`~~ → **niet doen**: bestandsnaam en mapnaam wijzigen elke maand (P4–P8 vastgesteld), een kopie naar de nieuwe maandmap blijft stilzwijgend naar het oude bestand wijzen, en Office Scripts kan externe werkmapkoppelingen sowieso niet verversen.
-- **Beslist**: de Power BI-connectie komt in het Input Board Pack zelf te staan (tab "Entity list"). Het losse maandbestand blijft als archief bestaan.
-- De rechtstreekse DAX-query via het Treasury-model is gevalideerd (358 entiteiten, exact match met het Excel-bestand) en blijft gedocumenteerd als terugvaloptie.
+1. Transfers zonder maandgrens (bevinding 4) — bewust?
+2. Lease Liability bij kwartaalbetalingen (bevinding 5) — bewust?
+3. Moet de plug in kolom L leeggemaakt worden bij de roll, of blijft de vorige
+   waarde staan als vertrekpunt? Het script laat hem nu staan en vlagt hem.

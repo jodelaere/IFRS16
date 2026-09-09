@@ -1,24 +1,23 @@
 /**
  * IFRS16 Monthly Roll-Forward — Office Script
  *
- * Runs against the "Input Board Pack.xlsx" for the new period (already copied
- * forward from the previous period's file by the Power Automate flow before
- * this script is invoked). See docs/automation-design.md for the full design,
- * assumptions, and open validation points — several ranges below are marked
- * CONFIRM-ME because they could not be verified against the live workbook
- * from this session and must be checked before this script is trusted on the
- * real file.
+ * Runs against the new period's "Input Board Pack.xlsx", already copied forward
+ * from the previous period by the Power Automate flow. Every sheet name, table
+ * name, cell reference and formula below was verified against
+ * "202608 - IFRS16 - 3 - Input Board Pack.xlsx" (P8 2026).
  *
- * Invoked from Power Automate via the "Run script" action. Power Automate
- * supplies anaplan29Rows / anaplan210Rows as arrays of LeaseRow (e.g. built
- * from "List rows present in a table" on the two Anaplan export files).
+ * Invoked from Power Automate via "Run script". Power Automate supplies the two
+ * Anaplan exports as LeaseRow arrays ("Updated Lease properties (2).xlsx" →
+ * 2.9 Input, "(3).xlsx" → 2.10 Input) plus the period parameters.
  *
- * The Entity list is NOT passed in: that tab carries its own Power BI
- * connection inside the workbook, so it travels with the monthly copy and is
- * updated by the refresh below rather than written by this script.
+ * REQUIRES the one-time template changes in docs/automation-design.md — most
+ * importantly the Power Query reporting-period parameter. Without it the queries
+ * derive the reporting month from DateTime.LocalNow() and this script cannot
+ * control which month they compute.
  */
 
 interface LeaseRow {
+  Key: string // "1001__2ATC794" — entity code + contract name, split by the query
   Entity: string
   LeaseDescription: string
   CostCenter: string
@@ -31,7 +30,7 @@ interface LeaseRow {
   ReasonablyCertainEndDate: string
   TransferInDate: string
   TransferOutDate: string
-  LeaseDuration: string
+  LeaseDuration: number
   FixedPayment: number
   PaymentFrequency: string
   PaymentAtBeginningOfPeriod: string
@@ -48,35 +47,9 @@ interface LeaseRow {
   TypeMotor: string
 }
 
-/**
- * The tab carrying the Power BI connection to the Legal Entity Dimension,
- * added to the board pack in P8 2026. Read back after the refresh so entities
- * MDM has not mapped yet get surfaced instead of silently dropping out of the
- * per-PowerHouse totals.
- * CONFIRM-ME: column indexes assume the connection returns the same order as
- * the standalone source file (A Code, B Description, C LE Powerhouse,
- * D LE Boutique).
- */
-const ENTITY_LIST_SHEET = 'Entity List PowerBI'
-const ENTITY_LIST_CODE_COLUMN = 0
-const ENTITY_LIST_DESCRIPTION_COLUMN = 1
-const ENTITY_LIST_POWERHOUSE_COLUMN = 2
-
-/** PowerHouse values that mean "not mapped yet in MDM". */
-const UNMAPPED_POWERHOUSE_VALUES = ['', 'N/A']
-
-interface RollForwardParams {
-  newMonthLabel: string // e.g. "September 2026"
-  previousMonthLabel: string // e.g. "August 2026"
-  newPeriodCode: string // e.g. "P09"
-  previousPeriodCode: string // e.g. "P08"
-  /** First day of the new reporting period, used to detect "new this month" leases. */
-  periodStartDate: string // ISO date, e.g. "2026-09-01"
-  periodEndDate: string // ISO date, e.g. "2026-09-30"
-}
-
+/** The 28 columns of the Anaplan export, in sheet order. */
 const LEASE_ROW_HEADERS: (keyof LeaseRow)[] = [
-  'Entity', 'LeaseDescription', 'CostCenter', 'LocalCostCenterCode',
+  'Key', 'Entity', 'LeaseDescription', 'CostCenter', 'LocalCostCenterCode',
   'LeaseCommencementDate', 'PurchaseOption', 'ExerciseOfPurchaseOptionDate',
   'ExercisePriceOfPurchaseOption', 'ReasonablyCertainEndDateSelection',
   'ReasonablyCertainEndDate', 'TransferInDate', 'TransferOutDate',
@@ -87,159 +60,205 @@ const LEASE_ROW_HEADERS: (keyof LeaseRow)[] = [
   'LastModificationStatus', 'AssetCategory', 'LeasedCapacity', 'TypeMotor',
 ]
 
+interface RollForwardParams {
+  /** Last day of the new reporting period, e.g. "2026-09-30". Drives every label. */
+  periodEndDate: string
+  /** e.g. "September 2026" — the month label typed into the schedule headers. */
+  newMonthLabel: string
+  /** e.g. "August 2026" — becomes the comparative column header. */
+  previousMonthLabel: string
+  /** e.g. "P09" — used for the "mvt P09" column headers. */
+  newPeriodCode: string
+}
+
+// --- Verified sheet, table and cell references (P8 2026 workbook) -----------
+
+const SHEET_MVT_DETAILS = 'Mvt Schedule Details'
+const SHEET_MOVEMENT = 'Movement schedule'
+const SHEET_ENTITY_LIST_PBI = 'Entity List PowerBI'
+
+/** Anaplan data lands in these Excel Tables; the Power Queries read them by name. */
+const TABLE_29_INPUT = 'Table2.9'
+const TABLE_210_INPUT = 'Table1'
+
+/**
+ * Movement schedule layout. Two blocks with identical column structure:
+ * A PowerHouse | B opening (Dec) | C new | D M&A | E terminated | F transfers |
+ * G current month | I calculated | J difference | L plug (new) | M plug (prior) |
+ * O prior month | P movement.
+ * Buildings rows 3-14, vehicles rows 19-30, 12 PowerHouses each.
+ */
+const BUILDINGS_FIRST_ROW = 3
+const VEHICLES_FIRST_ROW = 19
+const POWERHOUSE_COUNT = 12
+
+/**
+ * G1 and G17 are formulas (=K34), so the current-month label is edited once in
+ * the presentation table at row 34 and both block headers follow.
+ */
+const CELL_MONTH_LABEL_BUILDINGS = 'F34'
+const CELL_MONTH_LABEL_VEHICLES = 'K34'
+
+/** Entity List PowerBI: Table_ExternalData_1 at A3:S361, headers row 3, data row 4. */
+const ENTITY_LIST_PBI_FIRST_DATA_ROW = 4
+const ENTITY_LIST_PBI_CODE_COLUMN = 1 // A
+const ENTITY_LIST_PBI_DESCRIPTION_COLUMN = 2 // B
+const ENTITY_LIST_PBI_POWERHOUSE_COLUMN = 6 // F — note: NOT C, which is LE Country Long
+
+/** PowerHouse values that mean "not mapped yet in MDM". */
+const UNMAPPED_POWERHOUSE_VALUES = ['', 'N/A']
+
+/** Excel caps a single setValues payload; write large inputs in slices. */
+const WRITE_CHUNK_ROWS = 5000
+
 function main(
   workbook: ExcelScript.Workbook,
   anaplan29Rows: LeaseRow[],
   anaplan210Rows: LeaseRow[],
   params: RollForwardParams
-) {
-  overwriteInputTab(workbook, '2.9 input', anaplan29Rows)
-  overwriteInputTab(workbook, '2.10 input', anaplan210Rows)
+): string {
+  replaceInputTable(workbook, TABLE_29_INPUT, anaplan29Rows)
+  replaceInputTable(workbook, TABLE_210_INPUT, anaplan210Rows)
 
-  refreshEverything(workbook)
-  reportUnmappedEntities(workbook)
+  refreshQueriesAndPivots(workbook)
 
-  // CONFIRM-ME: whether the header roll is pure text or also needs formula
-  // shifts. See docs/automation-design.md, open point 5.
-  rollMovementScheduleHeaders(workbook, params)
+  rollMovementSchedule(workbook, params)
+  appendNewBuildings(workbook, anaplan210Rows, params)
 
-  appendNewLeases(workbook, anaplan210Rows, params)
+  refreshQueriesAndPivots(workbook)
 
-  refreshEverything(workbook)
+  return buildReviewReport(workbook, params)
 }
 
 /**
- * The Entity list tab holds its own Power BI connection to the Legal Entity
- * Dimension, so refreshEverything() already updated it — nothing is written
- * here. This only reads the result back to surface entities MDM has not mapped
- * to a PowerHouse yet, which would otherwise drop out of the per-PowerHouse
- * totals without any error.
- *
- * Note there is deliberately no LE Active filter on that connection: an
- * inactive entity can still carry live or historical leases in the Anaplan
- * export, and filtering would leave those contracts unmapped.
+ * Overwrites an input table with the fresh Anaplan export. Resizing the table
+ * matters: the Power Queries read Table1 / Table2.9 by name, so a plain range
+ * paste would leave them reading the previous month's row count.
  */
-function reportUnmappedEntities(workbook: ExcelScript.Workbook) {
-  const sheet = workbook.getWorksheet(ENTITY_LIST_SHEET)
-  if (!sheet) {
-    throw new Error(`Sheet "${ENTITY_LIST_SHEET}" not found — confirm exact tab name before running.`)
+function replaceInputTable(workbook: ExcelScript.Workbook, tableName: string, rows: LeaseRow[]) {
+  const table = workbook.getTable(tableName)
+  if (!table) {
+    throw new Error(`Table "${tableName}" not found — the Power Query reads it by name, so it must exist.`)
+  }
+  if (rows.length === 0) {
+    throw new Error(`No Anaplan rows supplied for "${tableName}" — refusing to empty the input table.`)
   }
 
-  const usedRange = sheet.getUsedRange()
-  if (!usedRange) return
+  const sheet = table.getWorksheet()
+  const headerRange = table.getHeaderRowRange()
+  const firstDataRow = headerRange.getRowIndex() + 1
+  const firstColumn = headerRange.getColumnIndex()
+  const columnCount = LEASE_ROW_HEADERS.length
 
-  const rows = usedRange.getValues()
-  const unmapped: string[] = []
-  for (let i = 1; i < rows.length; i++) {
-    const powerhouse = String(rows[i][ENTITY_LIST_POWERHOUSE_COLUMN] ?? '').trim()
-    if (UNMAPPED_POWERHOUSE_VALUES.indexOf(powerhouse) !== -1) {
-      unmapped.push(`${rows[i][ENTITY_LIST_CODE_COLUMN]} ${rows[i][ENTITY_LIST_DESCRIPTION_COLUMN]}`)
-    }
+  const existingBody = table.getRangeBetweenHeaderAndTotal()
+  if (existingBody) {
+    existingBody.clear(ExcelScript.ClearApplyTo.contents)
   }
 
-  if (unmapped.length > 0) {
-    console.log(`Entities without a PowerHouse mapping (fix in MDM): ${unmapped.join(', ')}`)
-  }
-}
+  table.resize(sheet.getRangeByIndexes(headerRange.getRowIndex(), firstColumn, rows.length + 1, columnCount))
 
-function overwriteInputTab(workbook: ExcelScript.Workbook, sheetName: string, rows: LeaseRow[]) {
-  const sheet = workbook.getWorksheet(sheetName)
-  if (!sheet) {
-    throw new Error(`Sheet "${sheetName}" not found — confirm exact tab name before running.`)
-  }
-
-  const usedRange = sheet.getUsedRange()
-  const headerRow = 1 // CONFIRM-ME: assumes row 1 = headers, data starts row 2
-  const lastDataRow = Math.max(usedRange ? usedRange.getRowCount() : headerRow, headerRow)
-
-  // Clear existing data below the header row, keep formatting.
-  if (lastDataRow > headerRow) {
+  for (let offset = 0; offset < rows.length; offset += WRITE_CHUNK_ROWS) {
+    const slice = rows.slice(offset, offset + WRITE_CHUNK_ROWS)
+    const values = slice.map((row) => LEASE_ROW_HEADERS.map((key) => row[key] ?? ''))
     sheet
-      .getRangeByIndexes(headerRow, 0, lastDataRow - headerRow, LEASE_ROW_HEADERS.length)
-      .clear(ExcelScript.ClearApplyTo.contents)
-  }
-
-  const values = rows.map((row) => LEASE_ROW_HEADERS.map((key) => row[key] ?? ''))
-  if (values.length > 0) {
-    sheet
-      .getRangeByIndexes(headerRow, 0, values.length, LEASE_ROW_HEADERS.length)
+      .getRangeByIndexes(firstDataRow + offset, firstColumn, slice.length, columnCount)
       .setValues(values as (string | number)[][])
   }
 }
 
 /**
- * CONFIRM-ME: refreshAllPowerQueries() covers the Entity list connection only
- * if it is a Power Query connection. A live Power BI (Analysis Services)
- * connection may not refresh from a script/service-account context at all —
- * see docs/automation-design.md. If it does not, the Entity list refresh stays
- * a manual "Refresh All" step and everything else here still applies.
+ * Both Power Queries source from $Workbook$ (the input tables), so they need no
+ * external credentials. The five PivotTables have refreshOnLoad=false and feed
+ * the Movement schedule XLOOKUPs, so they must be refreshed explicitly — and
+ * only after the queries have rebuilt their output tables.
+ *
+ * The Entity List PowerBI tab is a live MSOLAP connection to Power BI and is
+ * NOT refreshed here; see docs/automation-design.md.
  */
-function refreshEverything(workbook: ExcelScript.Workbook) {
+function refreshQueriesAndPivots(workbook: ExcelScript.Workbook) {
   workbook.refreshAllPowerQueries()
   workbook.getPivotTables().forEach((pivotTable) => pivotTable.refresh())
   workbook.getApplication().calculate(ExcelScript.CalculationType.fullRebuild)
 }
 
-function rollMovementScheduleHeaders(workbook: ExcelScript.Workbook, params: RollForwardParams) {
-  const sheet = workbook.getWorksheet('Movement schedule')
-  if (!sheet) throw new Error('Sheet "Movement schedule" not found.')
+/**
+ * Rolls the period labels and shifts the plug column one month back.
+ *
+ * The plug in column L is a manual reconciling entry: column O ("prior month")
+ * is SUM(H:L), which reduces to current month + plug, and column P is the
+ * month's movement. The new plug is a judgement the preparer makes, so this
+ * only preserves last month's value in column M and leaves L for review — it
+ * never invents one.
+ */
+function rollMovementSchedule(workbook: ExcelScript.Workbook, params: RollForwardParams) {
+  const sheet = workbook.getWorksheet(SHEET_MOVEMENT)
+  if (!sheet) throw new Error(`Sheet "${SHEET_MOVEMENT}" not found.`)
 
-  // G1 / G17 are already formula-driven (=K34) per the sample workbook, so
-  // the "current month" header does not need to be touched here.
+  const periodEnd = new Date(params.periodEndDate)
+  const month = String(periodEnd.getUTCMonth() + 1).padStart(2, '0')
+  const previousMonth = String(periodEnd.getUTCMonth() === 0 ? 12 : periodEnd.getUTCMonth()).padStart(2, '0')
+  const year = periodEnd.getUTCFullYear()
 
-  // CONFIRM-ME: column letters below are taken from the August 2026 sample
-  // and may need adjusting once the exact roll mechanic is confirmed.
-  const previousMonthHeaderCell = 'N1' // was "July 2026" in the sample
-  const movementColumnHeaderCell = 'O1' // was "mvt P08" in the sample
+  sheet.getRange(CELL_MONTH_LABEL_BUILDINGS).setValue(params.newMonthLabel)
+  sheet.getRange(CELL_MONTH_LABEL_VEHICLES).setValue(params.newMonthLabel)
 
-  sheet.getRange(previousMonthHeaderCell).setValue(params.previousMonthLabel)
-  sheet.getRange(movementColumnHeaderCell).setValue(`mvt ${params.newPeriodCode}`)
+  sheet.getRange('L1').setValue(`Plug ${month} ${year}`)
+  sheet.getRange('M1').setValue(`Plug ${previousMonth} ${year}`)
 
-  // Plug columns (K "Plug 08 2026" / L "Plug 07 2026" in the sample) are left
-  // untouched intentionally — see docs/automation-design.md: these are manual
-  // correcting entries made by the preparer and must not be auto-populated.
-}
+  for (const headerRow of [1, 17]) {
+    sheet.getRange(`O${headerRow}`).setValue(params.previousMonthLabel)
+    sheet.getRange(`P${headerRow}`).setValue(`mvt ${params.newPeriodCode}`)
+  }
 
-function appendNewLeases(workbook: ExcelScript.Workbook, currentExport: LeaseRow[], params: RollForwardParams) {
-  const sheet = workbook.getWorksheet('Mvt Schedule Details')
-  if (!sheet) throw new Error('Sheet "Mvt Schedule Details" not found.')
+  for (const firstRow of [BUILDINGS_FIRST_ROW, VEHICLES_FIRST_ROW]) {
+    const plugs = sheet.getRange(`L${firstRow}:L${firstRow + POWERHOUSE_COUNT - 1}`).getValues()
+    sheet.getRange(`M${firstRow}:M${firstRow + POWERHOUSE_COUNT - 1}`).setValues(plugs)
+  }
 
-  const start = new Date(params.periodStartDate)
-  const end = new Date(params.periodEndDate)
-
-  const newLeases = currentExport.filter((row) => {
-    const commencement = new Date(row.LeaseCommencementDate)
-    return commencement >= start && commencement <= end
-  })
-
-  const buildings = newLeases.filter((r) => r.AssetCategory === 'Land and buildings')
-  const vehicles = newLeases.filter((r) => r.AssetCategory === 'Vehicles')
-
-  appendToNewLeaseTable(sheet, 'BUILDINGS - NEW', buildings)
-  // CONFIRM-ME: "VEHICLES - NEW" table location/columns were not visible in
-  // the sample read — this call assumes it mirrors the BUILDINGS table with
-  // the same column layout, positioned to the right or below it.
-  appendToNewLeaseTable(sheet, 'VEHICLES - NEW', vehicles)
+  const details = workbook.getWorksheet(SHEET_MVT_DETAILS)
+  if (details) {
+    details.getRange('B1').setValue(`mvt ${params.newPeriodCode}`)
+    details.getRange('E1').setValue(`mvt ${params.newPeriodCode}`)
+  }
 }
 
 /**
- * Appends rows to the "<CATEGORY> - NEW" table in Mvt Schedule Details.
- * Column layout observed for BUILDINGS - NEW:
- *   Key | Entity | Lease description | Lease commencement date |
- *   Reasonably certain end date selection | Reasonably certain end date |
- *   Lease duration | Fixed payment | Payment frequency | Asset category |
- *   Leased capacity | Lease Liability (=FixedPayment * LeasedCapacity)
+ * Appends the buildings that commenced in the reporting month to the
+ * "BUILDINGS - NEW" table on Mvt Schedule Details (starting row 19).
+ *
+ * There is deliberately no vehicles equivalent — the workbook lists new
+ * buildings in detail only; vehicles are counted, not itemised.
+ *
+ * Column layout (verified): A key | B entity | C description | D commencement |
+ * E end date selection | F end date | G duration | H fixed payment |
+ * I frequency | J asset category | K leased capacity | L lease liability.
+ * L is a formula =H*G (fixed payment × duration) — see the open question in
+ * docs/automation-design.md about non-monthly payment frequencies.
  */
-function appendToNewLeaseTable(sheet: ExcelScript.Worksheet, tableName: string, rows: LeaseRow[]) {
-  const table = sheet.getTables().find((t) => t.getName() === tableName)
-  if (!table) {
-    console.log(`Table "${tableName}" not found by name — confirm it is defined as an Excel Table, or adjust appendToNewLeaseTable to use a fixed range instead.`)
-    return
-  }
+function appendNewBuildings(workbook: ExcelScript.Workbook, currentExport: LeaseRow[], params: RollForwardParams) {
+  const sheet = workbook.getWorksheet(SHEET_MVT_DETAILS)
+  if (!sheet) throw new Error(`Sheet "${SHEET_MVT_DETAILS}" not found.`)
 
-  for (const row of rows) {
-    table.addRow(-1, [
-      `${row.Entity.split(' - ')[0]}__${row.LeaseDescription}`, // CONFIRM-ME: key format guessed from sample data
+  const periodEnd = new Date(params.periodEndDate)
+  const periodStart = new Date(Date.UTC(periodEnd.getUTCFullYear(), periodEnd.getUTCMonth(), 1))
+
+  const newBuildings = currentExport.filter((row) => {
+    if (row.AssetCategory !== 'Land and buildings') return false
+    const commencement = new Date(row.LeaseCommencementDate)
+    return commencement >= periodStart && commencement <= periodEnd
+  })
+
+  const headerRow = 18
+  const firstDataRow = headerRow + 1
+
+  // Clear the previous month's rows plus the total line below them.
+  const previousBlock = sheet.getRangeByIndexes(firstDataRow - 1, 0, 200, 12)
+  previousBlock.clear(ExcelScript.ClearApplyTo.contents)
+
+  newBuildings.forEach((row, index) => {
+    const rowNumber = firstDataRow + index
+    sheet.getRangeByIndexes(rowNumber - 1, 0, 1, 11).setValues([[
+      row.Key,
       row.Entity,
       row.LeaseDescription,
       row.LeaseCommencementDate,
@@ -250,7 +269,79 @@ function appendToNewLeaseTable(sheet: ExcelScript.Worksheet, tableName: string, 
       row.PaymentFrequency,
       row.AssetCategory,
       row.LeasedCapacity,
-      row.FixedPayment * row.LeasedCapacity,
-    ])
+    ]])
+    sheet.getRange(`L${rowNumber}`).setFormula(`=H${rowNumber}*G${rowNumber}`)
+  })
+
+  if (newBuildings.length > 0) {
+    const totalRow = firstDataRow + newBuildings.length
+    sheet.getRange(`L${totalRow}`).setFormula(`=SUM(L${firstDataRow}:L${totalRow - 1})`)
   }
+}
+
+/**
+ * Everything the preparer must look at, returned to Power Automate so it can go
+ * straight into the notification instead of being buried in a script log.
+ */
+function buildReviewReport(workbook: ExcelScript.Workbook, params: RollForwardParams): string {
+  const lines: string[] = [`IFRS16 roll-forward to ${params.newMonthLabel} (${params.newPeriodCode})`]
+
+  const movement = workbook.getWorksheet(SHEET_MOVEMENT)
+  if (movement) {
+    const buildingsCheck = movement.getRange('F49').getValue()
+    const vehiclesCheck = movement.getRange('K49').getValue()
+    const ok = Number(buildingsCheck) === 0 && Number(vehiclesCheck) === 0
+    lines.push(`CHECK row (must be 0): buildings ${buildingsCheck}, vehicles ${vehiclesCheck} — ${ok ? 'OK' : 'NOT TYING, investigate'}`)
+
+    const differences: string[] = []
+    for (const firstRow of [BUILDINGS_FIRST_ROW, VEHICLES_FIRST_ROW]) {
+      const block = movement.getRange(`A${firstRow}:J${firstRow + POWERHOUSE_COUNT - 1}`).getValues()
+      block.forEach((row) => {
+        const difference = Number(row[9])
+        if (difference !== 0) differences.push(`${row[0]} (${difference})`)
+      })
+    }
+    lines.push(differences.length === 0
+      ? 'Difference column: all zero.'
+      : `Difference column not zero for: ${differences.join(', ')}`)
+  }
+
+  lines.push('Plug column L needs review — it still holds last month\'s value; column M now carries the prior-month plug.')
+  lines.push(unmappedEntitySummary(workbook))
+
+  return lines.join('\n')
+}
+
+/**
+ * Entities MDM has not mapped to a PowerHouse drop out of the per-PowerHouse
+ * totals without any error, so they are reported rather than left silent.
+ */
+function unmappedEntitySummary(workbook: ExcelScript.Workbook): string {
+  const sheet = workbook.getWorksheet(SHEET_ENTITY_LIST_PBI)
+  if (!sheet) return `Sheet "${SHEET_ENTITY_LIST_PBI}" not found — entity mapping not checked.`
+
+  const usedRange = sheet.getUsedRange()
+  if (!usedRange) return 'Entity list is empty.'
+
+  const lastRow = usedRange.getRowIndex() + usedRange.getRowCount()
+  const rowCount = lastRow - ENTITY_LIST_PBI_FIRST_DATA_ROW + 1
+  if (rowCount <= 0) return 'Entity list has no data rows.'
+
+  const values = sheet
+    .getRangeByIndexes(ENTITY_LIST_PBI_FIRST_DATA_ROW - 1, 0, rowCount, ENTITY_LIST_PBI_POWERHOUSE_COLUMN)
+    .getValues()
+
+  const unmapped: string[] = []
+  values.forEach((row) => {
+    const code = String(row[ENTITY_LIST_PBI_CODE_COLUMN - 1] ?? '').trim()
+    if (!code) return
+    const powerhouse = String(row[ENTITY_LIST_PBI_POWERHOUSE_COLUMN - 1] ?? '').trim()
+    if (UNMAPPED_POWERHOUSE_VALUES.indexOf(powerhouse) !== -1) {
+      unmapped.push(`${code} ${row[ENTITY_LIST_PBI_DESCRIPTION_COLUMN - 1]}`)
+    }
+  })
+
+  return unmapped.length === 0
+    ? `Entity list: ${values.length} rows, all mapped to a PowerHouse.`
+    : `Entities without a PowerHouse mapping (fix in MDM): ${unmapped.join(', ')}`
 }
