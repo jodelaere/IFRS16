@@ -12,6 +12,10 @@
  * Invoked from Power Automate via the "Run script" action. Power Automate
  * supplies anaplan29Rows / anaplan210Rows as arrays of LeaseRow (e.g. built
  * from "List rows present in a table" on the two Anaplan export files).
+ *
+ * The Entity list is NOT passed in: that tab carries its own Power BI
+ * connection inside the workbook, so it travels with the monthly copy and is
+ * updated by the refresh below rather than written by this script.
  */
 
 interface LeaseRow {
@@ -45,33 +49,18 @@ interface LeaseRow {
 }
 
 /**
- * One row of the "Legal Entity Dimension" table (MDM master data), queried
- * directly from the Power BI Treasury model — artifactId
- * 68d39a44-643a-40ce-bfb2-cbf6e2a0e3c6, which DirectQueries the FDP tables.
- * The FDP model itself (5764f6b0-…) returns ArtifactAccessDenied; the
- * Treasury route works. Validated at 358 entities against the P8 2026 file.
- * See docs/automation-design.md for the exact DAX query.
- *
- * Note: "PH Fluence" is deliberately absent — it is not a Power BI column but
- * an Excel-side lookup against the static FDP/Anaplan ↔ Fluence PowerHouse
- * name mapping, which stays in the workbook.
- *
- * CONFIRM-ME: exact target tab name/columns inside the Input Board Pack (see
- * docs/automation-design.md, open point 6).
+ * Column holding the PowerHouse on the "Entity list" tab, checked after the
+ * refresh so entities MDM has not mapped yet get surfaced instead of silently
+ * dropping out of the per-PowerHouse totals.
+ * CONFIRM-ME: exact tab name and column index (see docs/automation-design.md,
+ * open point 6).
  */
-interface EntityListRow {
-  LegalEntityCode: string
-  LegalEntityDescription: string
-  LEPowerhouse: string
-  LEBoutique: string
-  LEActive: string
-}
+const ENTITY_LIST_SHEET = 'Entity list'
+const ENTITY_LIST_CODE_COLUMN = 0
+const ENTITY_LIST_DESCRIPTION_COLUMN = 1
+const ENTITY_LIST_POWERHOUSE_COLUMN = 2
 
-const ENTITY_LIST_HEADERS: (keyof EntityListRow)[] = [
-  'LegalEntityCode', 'LegalEntityDescription', 'LEPowerhouse', 'LEBoutique', 'LEActive',
-]
-
-/** PowerHouses with no mapping yet — flagged for follow-up in MDM. */
+/** PowerHouse values that mean "not mapped yet in MDM". */
 const UNMAPPED_POWERHOUSE_VALUES = ['', 'N/A']
 
 interface RollForwardParams {
@@ -98,17 +87,15 @@ const LEASE_ROW_HEADERS: (keyof LeaseRow)[] = [
 
 function main(
   workbook: ExcelScript.Workbook,
-  entityListRows: EntityListRow[],
   anaplan29Rows: LeaseRow[],
   anaplan210Rows: LeaseRow[],
   params: RollForwardParams
 ) {
-  overwriteEntityListTab(workbook, entityListRows)
-
   overwriteInputTab(workbook, '2.9 input', anaplan29Rows)
   overwriteInputTab(workbook, '2.10 input', anaplan210Rows)
 
   refreshEverything(workbook)
+  reportUnmappedEntities(workbook)
 
   // CONFIRM-ME: whether the header roll is pure text or also needs formula
   // shifts. See docs/automation-design.md, open point 5.
@@ -119,44 +106,37 @@ function main(
   refreshEverything(workbook)
 }
 
-function overwriteEntityListTab(workbook: ExcelScript.Workbook, rows: EntityListRow[]) {
-  // Rows come from the Power Automate Power BI query step (Treasury model) —
-  // no LE Active filter is applied there on purpose: an inactive entity can
-  // still carry live or historical leases in the Anaplan export, and filtering
-  // would leave those contracts without a PowerHouse.
-  const sheet = workbook.getWorksheet('Entity list')
+/**
+ * The Entity list tab holds its own Power BI connection to the Legal Entity
+ * Dimension, so refreshEverything() already updated it — nothing is written
+ * here. This only reads the result back to surface entities MDM has not mapped
+ * to a PowerHouse yet, which would otherwise drop out of the per-PowerHouse
+ * totals without any error.
+ *
+ * Note there is deliberately no LE Active filter on that connection: an
+ * inactive entity can still carry live or historical leases in the Anaplan
+ * export, and filtering would leave those contracts unmapped.
+ */
+function reportUnmappedEntities(workbook: ExcelScript.Workbook) {
+  const sheet = workbook.getWorksheet(ENTITY_LIST_SHEET)
   if (!sheet) {
-    throw new Error('Sheet "Entity list" not found — confirm exact tab name before running.')
+    throw new Error(`Sheet "${ENTITY_LIST_SHEET}" not found — confirm exact tab name before running.`)
   }
 
-  const headerRow = 1
   const usedRange = sheet.getUsedRange()
-  const lastDataRow = Math.max(usedRange ? usedRange.getRowCount() : headerRow, headerRow)
+  if (!usedRange) return
 
-  if (lastDataRow > headerRow) {
-    sheet
-      .getRangeByIndexes(headerRow, 0, lastDataRow - headerRow, ENTITY_LIST_HEADERS.length)
-      .clear(ExcelScript.ClearApplyTo.contents)
+  const rows = usedRange.getValues()
+  const unmapped: string[] = []
+  for (let i = 1; i < rows.length; i++) {
+    const powerhouse = String(rows[i][ENTITY_LIST_POWERHOUSE_COLUMN] ?? '').trim()
+    if (UNMAPPED_POWERHOUSE_VALUES.indexOf(powerhouse) !== -1) {
+      unmapped.push(`${rows[i][ENTITY_LIST_CODE_COLUMN]} ${rows[i][ENTITY_LIST_DESCRIPTION_COLUMN]}`)
+    }
   }
 
-  const values = rows.map((row) => ENTITY_LIST_HEADERS.map((key) => row[key] ?? ''))
-  if (values.length > 0) {
-    sheet
-      .getRangeByIndexes(headerRow, 0, values.length, ENTITY_LIST_HEADERS.length)
-      .setValues(values as string[][])
-  }
-
-  // Entities without a PowerHouse mapping drop out of the per-PowerHouse
-  // totals, so surface them for follow-up in MDM rather than failing silently.
-  const unmapped = rows.filter((row) =>
-    UNMAPPED_POWERHOUSE_VALUES.indexOf(row.LEPowerhouse ?? '') !== -1
-  )
   if (unmapped.length > 0) {
-    console.log(
-      `Entities without a PowerHouse mapping (fix in MDM): ${unmapped
-        .map((row) => `${row.LegalEntityCode} ${row.LegalEntityDescription}`)
-        .join(', ')}`
-    )
+    console.log(`Entities without a PowerHouse mapping (fix in MDM): ${unmapped.join(', ')}`)
   }
 }
 
@@ -185,7 +165,15 @@ function overwriteInputTab(workbook: ExcelScript.Workbook, sheetName: string, ro
   }
 }
 
+/**
+ * CONFIRM-ME: refreshAllPowerQueries() covers the Entity list connection only
+ * if it is a Power Query connection. A live Power BI (Analysis Services)
+ * connection may not refresh from a script/service-account context at all —
+ * see docs/automation-design.md. If it does not, the Entity list refresh stays
+ * a manual "Refresh All" step and everything else here still applies.
+ */
 function refreshEverything(workbook: ExcelScript.Workbook) {
+  workbook.refreshAllPowerQueries()
   workbook.getPivotTables().forEach((pivotTable) => pivotTable.refresh())
   workbook.getApplication().calculate(ExcelScript.CalculationType.fullRebuild)
 }

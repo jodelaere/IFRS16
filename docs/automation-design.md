@@ -112,11 +112,65 @@ Legal Entity Code) in de "2.9 Output"/"2.10 Output"-tabs om elke leaseregel aan
 de juiste PowerHouse te koppelen — dit is dus de schakel die de aantallen in
 "Pivots on 2.10" en "Movement schedule" per PowerHouse correct laat optellen.
 
-### ✅ Gekozen aanpak: rechtstreekse Power BI-query (gevalideerd)
+### ✅ Gekozen aanpak: Power BI-connectie ín het Input Board Pack
 
-De tussenliggende Excel-refresh is **niet nodig** — de entity list kan
-rechtstreeks opgehaald worden met een DAX-query, wat het losse
-`Entity list Power BI - To refresh.xlsx`-bestand volledig uit de flow haalt.
+**Beslissing**: de Power BI-connectie wordt verplaatst naar de "Entity
+list"-tab van het Input Board Pack zelf. Het losse maandbestand
+`Entity list Power BI - To refresh.xlsx` blijft bestaan als archief/snapshot,
+maar is geen schakel meer in de dataflow. "Refresh All" in het board pack
+werkt de entity list dan rechtstreeks bij.
+
+#### Waarom niet via een externe verwijzing naar het losse bestand
+
+Een externe werkmapkoppeling (`='https://…/[Entity list….xlsx]Sheet1'!A1`) lijkt
+de voor de hand liggende oplossing, maar breekt in deze setup op drie punten:
+
+1. **De bestandsnaam wijzigt elke maand** — vastgesteld over P4–P8:
+   `2026.04 - Entity list to refresh.xlsx` → `2026.05 - IFRS16 - 1 - Entity list Power BI - To refresh.xlsx`
+   → `2026.06 - …` → `#2026.07 - …` (met `#`-prefix) → `202608 - …` (ander
+   datumformaat). Ook de mapnaam varieert: `P5 2026/IFRS16` (zonder spatie) vs.
+   `P8 2026/IFRS 16` (met spatie). Elke koppeling op naam/pad moet dus sowieso
+   maandelijks handmatig opnieuw gericht worden.
+2. **Kopiëren naar de nieuwe maand breekt het stilzwijgend** — SharePoint-links
+   worden als absolute URL opgeslagen, dus een board pack dat van P8 naar P9
+   gekopieerd wordt blijft naar het *P8*-bestand wijzen. Geen foutmelding, wel
+   vorige maand haar data.
+3. **Office Scripts kan externe werkmapkoppelingen niet verversen** — er is geen
+   API voor. `application.calculate()` herrekent op *gecachte* externe waarden.
+   De automatiseringsstap zou dus niets ophalen.
+
+Een connectie ín de werkmap heeft geen van die drie problemen: ze reist mee bij
+het kopiëren naar de nieuwe maandmap, kent geen pad- of naamafhankelijkheid, en
+is programmatisch aanspreekbaar.
+
+#### Uit te voeren (eenmalig, in Excel Desktop)
+
+1. Open `202609 - IFRS16 - 3 - Input Board Pack.xlsx` (P9-map) én het bestaande
+   `Entity list Power BI - To refresh.xlsx` naast elkaar.
+2. Neem in het board pack de Power BI-verbinding over op de "Entity list"-tab
+   (Data → Get Data → From Power Platform → From Power BI semantic models →
+   `BEHOHR-FDP-PRD-FINANCE` → tabel `18. Legal Entity Dimension`), of kopieer de
+   bestaande query via Power Query Editor (rechtsklik query → Copy, plakken in
+   de query-editor van het board pack).
+3. Behoud de kolommen A–D in dezelfde volgorde als nu, en laat de
+   `PH FLUENCE`-formule (kolom E) en het `FDP/Anaplan ↔ Fluence`-mappingtabelletje
+   (kolom G/H) ongewijzigd staan — die zijn Excel-logica, geen Power BI-kolommen.
+4. Test: "Refresh All" → de entity list moet 358 rijen geven (stand P8 2026).
+5. Daarna is dit de template die elke maand mee gekopieerd wordt.
+
+> ⚠️ **Nog te testen**: of een Power BI-verbinding (Analysis Services) ook
+> ververst kan worden vanuit een Office Script / Power Automate-context, of dat
+> daar één handmatige "Refresh All" nodig blijft. Office Scripts heeft
+> `refreshAllPowerQueries()` en `pivotTable.refresh()`, maar credential-handling
+> voor een live Power BI-verbinding onder een service account is niet bevestigd.
+> Als dat niet lukt, blijft alleen de refresh handmatig — alle overige stappen
+> in de flow blijven wel geautomatiseerd.
+
+#### Referentie: rechtstreekse DAX-query (gevalideerd, als alternatief)
+
+Mocht bovenstaande connectie in de praktijk niet automatisch te verversen zijn,
+dan is dit de gevalideerde terugvaloptie: de entity list rechtstreeks ophalen
+met een DAX-query vanuit Power Automate.
 
 **Belangrijk — gebruik het Treasury-model, niet het FDP-model rechtstreeks:**
 
@@ -183,17 +237,17 @@ handmatig opgebouwde tabel met formules?
 2. **Nieuwe maandmap aanmaken**: kopieer de volledige `IFRS 16`-map (of specifiek
    het Input Board Pack-bestand) van de vorige periode naar de nieuwe periode-map
    (`sharepoint_copy_item`-achtige actie, native Power Automate "Copy file").
-3. **Entity list ophalen**: draai de DAX-query hierboven tegen het Treasury-model
-   (artifactId `68d39a44-643a-40ce-bfb2-cbf6e2a0e3c6`) via de Power BI-connector
-   in Power Automate ("Run a query against a dataset"-actie). Het losse
-   `Entity list Power BI - To refresh.xlsx`-bestand is hierdoor niet meer nodig
-   in de flow.
+3. **Entity list**: geen aparte flow-stap meer — de Power BI-connectie zit in het
+   board pack zelf en wordt meegenomen in de refresh van stap 5. Het losse
+   `Entity list Power BI - To refresh.xlsx`-bestand blijft enkel als
+   maandelijkse snapshot/archief bestaan.
 4. **Anaplan-data inladen**: lees de twee nieuwe exportbestanden (als tabel, via
    "List rows present in a table" — vereist dat de export als Excel-tabel is
    opgemaakt, of via een tussenstap die er een tabel van maakt).
 5. **Office Script uitvoeren** op het gekopieerde Input Board Pack-bestand met
-   als parameters: de entity list-rijen, de ingelezen Anaplan-rijen (2x), en de
-   nieuwe/vorige periodelabels. Zie `scripts/ifrs16-monthly-rollforward.ts`.
+   als parameters: de ingelezen Anaplan-rijen (2x) en de nieuwe/vorige
+   periodelabels. Het script ververst ook de Power Query-/Power BI-verbindingen
+   (entity list) en de pivottabellen. Zie `scripts/ifrs16-monthly-rollforward.ts`.
 6. **Notificatie**: stuur een mail/Teams-bericht met (a) de gedetecteerde nieuwe
    contracten die zijn voorgevuld in "Mvt Schedule Details" ter review, (b) een
    herinnering om de "Plug"-kolommen en eventuele header-kolommen (N/O)
@@ -210,8 +264,10 @@ handmatig opgebouwde tabel met formules?
 4. Bevestig de "VEHICLES - NEW"-tabel in "Mvt Schedule Details" (locatie/kolommen), aangezien die niet in de ingelezen data zat.
 5. Is de kolomverschuiving in "Movement schedule" (N/O headers, evt. toevoegen nieuwe kolom elke maand) puur tekst, of moeten er ook formules mee verschoven worden?
 6. Exacte locatie/kolomstructuur van de "Entity list"-tab in het Input Board Pack zelf (aangenomen: zelfde kolommen als "Legal Entity Dimension", zie hierboven), en hoe "2.9 Output"/"2.10 Output" die precies opzoeken (welke kolom, exacte range).
-7. Bevestig dat de Power BI-connector in Power Automate ("Run a query against a dataset") met dezelfde credentials het Treasury-model kan bereiken als de flow onder een service account draait in plaats van onder je eigen account.
+7. Kan de Power BI-verbinding in het board pack ververst worden vanuit een Office Script / Power Automate onder een service account? Zo niet, blijft die ene refresh handmatig (de rest van de flow blijft geautomatiseerd), of vallen we terug op de DAX-query hierboven.
 
-### ✅ Opgelost
+### ✅ Opgelost / beslist
 
-- ~~Entity list-bron: Excel-refresh vs. directe query~~ → directe DAX-query via het Treasury-model werkt en is gevalideerd (358 entiteiten, exact match met het Excel-bestand). Zie "Gekozen aanpak" hierboven.
+- ~~Entity list via een externe verwijzing naar `Entity list Power BI - To refresh.xlsx`~~ → **niet doen**: bestandsnaam en mapnaam wijzigen elke maand (P4–P8 vastgesteld), een kopie naar de nieuwe maandmap blijft stilzwijgend naar het oude bestand wijzen, en Office Scripts kan externe werkmapkoppelingen sowieso niet verversen.
+- **Beslist**: de Power BI-connectie komt in het Input Board Pack zelf te staan (tab "Entity list"). Het losse maandbestand blijft als archief bestaan.
+- De rechtstreekse DAX-query via het Treasury-model is gevalideerd (358 entiteiten, exact match met het Excel-bestand) en blijft gedocumenteerd als terugvaloptie.
