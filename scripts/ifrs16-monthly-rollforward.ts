@@ -376,8 +376,61 @@ function buildReviewReport(workbook: ExcelScript.Workbook, params: RollForwardPa
 
   lines.push('Column M now carries last month\'s plug; column L is unchanged and is the preparer\'s to set.')
   lines.push(unmappedEntitySummary(workbook))
+  lines.push(unresolvedInputEntitySummary(workbook))
 
   return lines.join('\n')
+}
+
+/**
+ * Entity codes present in the Anaplan input but absent from the Entity List.
+ *
+ * These are the dangerous ones: the Power Queries cast the code to Int64, so a
+ * non-numeric code (P8 2026 had "2XXX - 2XXX-ZorgXchange", 9 contracts in 2.9
+ * and 54 in 2.10) errors out and those rows vanish from the output entirely.
+ * The schedule still ties because both sides lose them, so nothing flags it.
+ * A numeric code missing from the list instead yields #N/A on the PowerHouse
+ * lookup and drops out of the pivots.
+ */
+function unresolvedInputEntitySummary(workbook: ExcelScript.Workbook): string {
+  const knownCodes: { [code: string]: boolean } = {}
+  const entitySheet = workbook.getWorksheet(SHEET_ENTITY_LIST_PBI)
+  if (entitySheet) {
+    const used = entitySheet.getUsedRange()
+    if (used) {
+      const lastRow = used.getRowIndex() + used.getRowCount()
+      const rows = entitySheet
+        .getRangeByIndexes(ENTITY_LIST_PBI_FIRST_DATA_ROW - 1, 0, lastRow - ENTITY_LIST_PBI_FIRST_DATA_ROW + 1, 1)
+        .getValues()
+      rows.forEach((row) => {
+        const code = String(row[0] ?? '').trim()
+        if (code) knownCodes[code] = true
+      })
+    }
+  }
+
+  const unresolved: { [code: string]: number } = {}
+  for (const tableName of [TABLE_29_INPUT, TABLE_210_INPUT]) {
+    const table = workbook.getTable(tableName)
+    if (!table) continue
+    const body = table.getRangeBetweenHeaderAndTotal()
+    if (!body) continue
+    const keys = body.getColumn(0).getValues()
+    keys.forEach((row) => {
+      const key = String(row[0] ?? '')
+      if (!key) return
+      const code = key.split('__')[0].trim()
+      if (code && !knownCodes[code]) unresolved[code] = (unresolved[code] ?? 0) + 1
+    })
+  }
+
+  const codes = Object.keys(unresolved)
+  if (codes.length === 0) return 'Every entity code in the Anaplan input resolves to the entity list.'
+  return (
+    'ENTITY CODES IN THE ANAPLAN INPUT WITH NO ENTITY LIST ENTRY — their contracts drop out ' +
+    'of every PowerHouse total without any error: ' +
+    codes.map((code) => `${code} (${unresolved[code]} contracts)`).join(', ') +
+    '. Fix the code in Anaplan.'
+  )
 }
 
 /**

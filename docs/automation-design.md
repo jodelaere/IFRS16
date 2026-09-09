@@ -214,6 +214,24 @@ van een stil verkeerd cijfer.
 van **€ 675.778,87 naar € 347.848,87** — de overige vijf contracten zijn
 maandelijks en blijven ongewijzigd. Te beslissen of P8 herzien wordt.
 
+### 6. 🔴 Entity code `2XXX` valt volledig uit de cijfers
+
+`2XXX - 2XXX-ZorgXchange` komt niet voor in de entiteitenlijst, maar heeft wel
+contracten: **9 in 2.9 Input en 54 in 2.10 Input**, alle vehicles.
+
+De contractsleutels wijzen de echte entiteit aan: `2XXX__2104_R-602-ZB`, en
+**2104 = TMI AP B.V., PowerHouse TMI** (actief).
+
+Wat er misgaat: beide Power Queries casten de entity code naar `Int64.Type`.
+`"2XXX"` is geen getal, dus die rijen lopen op een fout en verdwijnen uit de
+output — `2_9 Output` telt 155 datarijen en geen enkele zonder entity code.
+Die leases zitten dus in **geen enkele PowerHouse-telling**, en omdat beide
+zijden van de reconciliatie ze even hard missen, blijft de CHECK-rij netjes op 0.
+
+**Op te lossen in Anaplan** (entity code corrigeren naar 2104), niet in de
+workbook. Het roll-forward script rapporteert vanaf nu elke entity code uit de
+Anaplan-input die niet in de entiteitenlijst voorkomt, met het aantal contracten.
+
 ## Eenmalige template-wijzigingen
 
 Uit te voeren in Excel Desktop op het P8-bestand, dat daarna de template is die
