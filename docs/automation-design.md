@@ -146,12 +146,20 @@ Idem voor de lookup-ranges: `$B$6:$B$19` sluit precies aan op PivotTable3
 (B6:E20, 12 PowerHouses + Grand Total) — **geen marge**. Een 13e PowerHouse laat
 de pivot groeien en de lookup mist hem (via `IFERROR` → 0, dus zonder foutmelding).
 
-### 4. Transfers zijn niet begrensd op de rapportagemaand
+### 4. ℹ️ Transfers hebben geen maandgrens (nu zonder gevolg)
 
 `Transfers (IN)` en `Transfers (OUT)` gebruiken enkel `Date.IsInCurrentYear(...)`,
-zonder maandgrens — in tegenstelling tot de IN/OUT-vlaggen. Een transfer gedateerd
-december 2026 telt dus mee in het augustus-pack. Per PowerHouse compenseren die
-niet noodzakelijk. **Vraag: is dat bewust?**
+terwijl de IN/OUT-vlaggen elk *twee* voorwaarden hebben (jaar én maand). Een
+transfer gedateerd na de rapportagemaand zou dus meetellen.
+
+**Getoetst op de P8-data: geen effect.** Van de 399 transfer-IN en 399
+transfer-OUT rijen in 2026 valt er geen enkele na 31/08/2026 — Anaplan registreert
+transfers pas wanneer ze gebeuren. (399/399 matcht ook exact de Grand Totals van
+beide TRANSFER-pivots.)
+
+Alleen relevant als Anaplan ooit toekomstgedateerde transfers zou gaan bevatten.
+Wordt de parameter uit template-wijziging A doorgevoerd, dan is een maandgrens
+toevoegen triviaal — maar het is nu geen prioriteit.
 
 ### 5. 🔴 Lease Liability is fout voor kwartaalcontracten
 
@@ -318,7 +326,6 @@ rijen op de `Entity List PowerBI`-tab.
 
 ## Openstaande vragen
 
-1. Transfers zonder maandgrens (bevinding 4) — bewust?
-2. Moet de plug in kolom L leeggemaakt worden bij de roll, of blijft de vorige
+1. Moet de plug in kolom L leeggemaakt worden bij de roll, of blijft de vorige
    waarde staan als vertrekpunt? Het script laat hem nu staan en vlagt hem.
-3. Wordt P8 2026 herzien voor de Lease Liability-correctie (bevinding 5)?
+2. Wordt P8 2026 herzien voor de Lease Liability-correctie (bevinding 5)?
