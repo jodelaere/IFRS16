@@ -81,6 +81,9 @@ const SHEET_ENTITY_LIST_PBI = 'Entity List PowerBI'
 const TABLE_29_INPUT = 'Table2.9'
 const TABLE_210_INPUT = 'Table1'
 
+/** Named cell holding the period end date that both Power Queries read. */
+const REPORTING_PERIOD_NAME = 'ReportingPeriodEnd'
+
 /**
  * Movement schedule layout. Two blocks with identical column structure:
  * A PowerHouse | B opening (Dec) | C new | D M&A | E terminated | F transfers |
@@ -117,6 +120,10 @@ function main(
   anaplan210Rows: LeaseRow[],
   params: RollForwardParams
 ): string {
+  // Must precede any refresh: the Power Queries derive every IN/OUT flag from
+  // this parameter, so setting it afterwards would compute the wrong period.
+  setReportingPeriod(workbook, params.periodEndDate)
+
   // Column G still holds the previous month's counts until the new Anaplan data
   // is loaded, so capture it first — that is exactly what column O needs.
   const previousMonthCounts = capturePreviousMonthCounts(workbook)
@@ -133,6 +140,24 @@ function main(
   refreshQueriesAndPivots(workbook)
 
   return buildReviewReport(workbook, params)
+}
+
+/**
+ * Writes the reporting period into the named cell the Power Queries read.
+ * Without template change A the queries still use DateTime.LocalNow(), which
+ * makes the output depend on when the flow happens to run — so this fails loudly
+ * rather than silently producing whichever month the clock implies.
+ */
+function setReportingPeriod(workbook: ExcelScript.Workbook, periodEndDate: string) {
+  const namedItem = workbook.getNamedItem(REPORTING_PERIOD_NAME)
+  if (!namedItem) {
+    throw new Error(
+      `Named cell "${REPORTING_PERIOD_NAME}" not found. Apply template change A first — ` +
+      'until then the Power Queries take the reporting month from the system clock ' +
+      'and this script cannot control which period they compute.'
+    )
+  }
+  namedItem.getRange().setValue(periodEndDate)
 }
 
 /** Column G for both blocks, including the group total row. */

@@ -289,17 +289,88 @@ Het script zet deze formule vanaf nu zelf bij elke nieuw gedetecteerde building.
 
 ## Power Automate flow
 
-1. **Trigger**: nieuw bestand in `Anaplan Exports 2.92.10` van de lopende periode,
-   of maandelijkse planning na sluiting Anaplan.
-2. **Kopieer** het board pack van de vorige periode naar de nieuwe periodemap.
-3. **Zet** `ReportingPeriodEnd` op de nieuwe periode-einddatum (kan in het script).
-4. **Lees** de twee Anaplan-exports in ("List rows present in a table").
-5. **Run script** `ifrs16-monthly-rollforward.ts` met de twee rijenreeksen +
-   `periodEndDate`, `newMonthLabel`, `previousMonthLabel`, `newPeriodCode`.
-   Het script retourneert een reviewrapport.
-6. **Notificatie** met dat rapport: CHECK-rij, afwijkingen in de Difference-kolom,
-   nieuwe gedetecteerde buildings, niet-gemapte entiteiten, en de herinnering dat
-   de plug-kolom nog nagekeken moet worden.
+Site: `behohr-finance`, bibliotheek `Consolidation  annual statements`.
+
+### 1. Trigger — "Manually trigger a flow"
+
+Begin bewust **handmatig** met één invoerveld:
+
+| Invoer | Type | Voorbeeld |
+|---|---|---|
+| `PeriodEnd` | Date | `2026-09-30` |
+
+Reden: de close loopt niet elke maand op dezelfde dag, en de preparer weet
+wanneer Anaplan klaar is. Een planning of een bestandstrigger kan later, maar
+start handmatig zodat de eerste maanden controleerbaar zijn.
+
+### 2. Afgeleide waarden — "Compose"
+
+| Naam | Expressie | Resultaat |
+|---|---|---|
+| `NewYYYYMM` | `formatDateTime(triggerBody()['date'],'yyyyMM')` | `202609` |
+| `NewPeriodCode` | `concat('P',formatDateTime(triggerBody()['date'],'MM'))` | `P09` |
+| `NewMonthLabel` | `formatDateTime(triggerBody()['date'],'MMMM yyyy')` | `September 2026` |
+| `PrevMonthLabel` | `formatDateTime(addMonths(triggerBody()['date'],-1),'MMMM yyyy')` | `August 2026` |
+| `NewFolder` | `concat(formatDateTime(triggerBody()['date'],'yyyy'),'/P',formatDateTime(triggerBody()['date'],'M'),' ',formatDateTime(triggerBody()['date'],'yyyy'),'/IFRS 16')` | `2026/P9 2026/IFRS 16` |
+| `PrevFolder` | idem met `addMonths(...,-1)` | `2026/P8 2026/IFRS 16` |
+
+> ⚠️ `formatDateTime` geeft Engelse maandnamen — dat komt overeen met de labels in
+> het bestand (`August 2026`). De mapnaam gebruikt `M` zonder voorloopnul
+> (`P9 2026`), de bestandsnaam `MM` mét (`202609`). Zie de bestaande mappen.
+
+### 3. Vorige board pack ophalen — "Get files (properties only)"
+
+Op `PrevFolder`, met filter `substringof('Input Board Pack',Name)`. Neem het
+eerste resultaat. Faal expliciet als er geen of meer dan één match is — beter
+een duidelijke fout dan het verkeerde bestand doorrollen.
+
+### 4. Kopiëren — "Copy file"
+
+Naar `NewFolder`, bestandsnaam
+`concat(outputs('NewYYYYMM'),' - IFRS16 - 3 - Input Board Pack.xlsx')`.
+Zet "If another file is already there" op **Fail**, zodat een tweede run niet
+stilzwijgend werk overschrijft.
+
+Vanaf hier bepaalt de flow zelf de naamgeving, dus de historische
+naaminconsistentie speelt geen rol meer.
+
+### 5. Anaplan-exports inlezen — "List rows present in a table" (Excel Online)
+
+Twee keer, op `NewFolder/Anaplan Exports 2.92.10/`:
+
+| Bestand | Tabel | Gaat naar |
+|---|---|---|
+| `Updated Lease properties (2).xlsx` | de tabel in Sheet 1 | `2.9 Input` |
+| `Updated Lease properties (3).xlsx` | de tabel in Sheet 1 | `2.10 Input` |
+
+De exports moeten als Excel-tabel opgemaakt zijn, anders ziet deze actie ze niet.
+Zet **Pagination aan** met een limiet boven 25.000 — de 2.10-export heeft
+24.617 rijen en haalt anders stilzwijgend maar een deel op.
+
+### 6. Script uitvoeren — "Run script" (Excel Online)
+
+Op het gekopieerde bestand, script `ifrs16-monthly-rollforward`:
+
+| Parameter | Waarde |
+|---|---|
+| `anaplan29Rows` | output van de 2.9-lijst |
+| `anaplan210Rows` | output van de 2.10-lijst |
+| `params/periodEndDate` | `PeriodEnd` |
+| `params/newMonthLabel` | `NewMonthLabel` |
+| `params/previousMonthLabel` | `PrevMonthLabel` |
+| `params/newPeriodCode` | `NewPeriodCode` |
+
+Het script zet zelf `ReportingPeriodEnd`, legt kolom G vast vóór het inladen,
+ververst en retourneert een reviewrapport als tekst.
+
+### 7. Notificatie — "Send an email (V2)" of Teams-bericht
+
+Body = het reviewrapport uit stap 6, plus een link naar het nieuwe bestand.
+
+### Foutafhandeling
+
+Zet op stap 4 t/m 6 een parallelle "has failed"-tak die mailt met de foutmelding.
+Zonder dat faalt de flow stil en staat er een half bijgewerkt board pack in de map.
 
 ### Wat het script doet
 
