@@ -384,12 +384,16 @@ function buildReviewReport(workbook: ExcelScript.Workbook, params: RollForwardPa
 /**
  * Entity codes present in the Anaplan input but absent from the Entity List.
  *
- * These are the dangerous ones: the Power Queries cast the code to Int64, so a
- * non-numeric code (P8 2026 had "2XXX - 2XXX-ZorgXchange", 9 contracts in 2.9
- * and 54 in 2.10) errors out and those rows vanish from the output entirely.
- * The schedule still ties because both sides lose them, so nothing flags it.
- * A numeric code missing from the list instead yields #N/A on the PowerHouse
- * lookup and drops out of the pivots.
+ * The Power Queries cast the code to Int64, so a non-numeric code errors out
+ * and those rows vanish from the output entirely, with the schedule still tying
+ * because both sides lose them. A numeric code missing from the list instead
+ * yields #N/A on the PowerHouse lookup and drops out of the pivots. Either way
+ * nothing flags it, hence this check.
+ *
+ * P8 2026 carries one such code ("2XXX - 2XXX-ZorgXchange", 54 contracts) but
+ * it is harmless there: 52 were transferred out in 2024 and are excluded by
+ * design, and the other 2 trip no 2026 flag. The risk is a new contract booked
+ * on such an entity, which would disappear silently.
  */
 function unresolvedInputEntitySummary(workbook: ExcelScript.Workbook): string {
   const knownCodes: { [code: string]: boolean } = {}

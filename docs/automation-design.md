@@ -214,41 +214,35 @@ van een stil verkeerd cijfer.
 van **€ 675.778,87 naar € 347.848,87** — de overige vijf contracten zijn
 maandelijks en blijven ongewijzigd. Te beslissen of P8 herzien wordt.
 
-### 6. 🔴 Entity code `2XXX` valt volledig uit de cijfers
+### 6. ℹ️ Entity code `2XXX` — latent risico, geen actueel cijferprobleem
 
-`2XXX - 2XXX-ZorgXchange` komt niet voor in de entiteitenlijst, maar heeft wel
-contracten: **9 in 2.9 Input en 54 in 2.10 Input**, alle vehicles.
+`2XXX - 2XXX-ZorgXchange` is in Anaplan een volwaardige entiteit met een
+**placeholder-code**, en komt niet voor in de Legal Entity Dimension (358
+entiteiten, geen match). Ze heeft 54 contracten in 2.10 Input en 9 in 2.9 Input,
+alle vehicles.
 
-De contractsleutels wijzen de echte entiteit aan: `2XXX__2104_R-602-ZB`, en
-**2104 = TMI AP B.V., PowerHouse TMI** (actief).
+Omdat beide Power Queries de entity code naar `Int64.Type` casten en `"2XXX"`
+geen getal is, sneuvelen die rijen in de output. Dat klinkt ernstig, maar
+onderzocht blijkt het **geen effect op de cijfers** te hebben:
 
-Wat er misgaat: beide Power Queries casten de entity code naar `Int64.Type`.
-`"2XXX"` is geen getal, dus die rijen lopen op een fout en verdwijnen uit de
-output — `2_9 Output` telt 155 datarijen en geen enkele zonder entity code.
-Die leases zitten dus in **geen enkele PowerHouse-telling**, en omdat beide
-zijden van de reconciliatie ze even hard missen, blijft de CHECK-rij netjes op 0.
+- **52 van de 54** hebben een Transfer Out, allemaal gedateerd **2024** — het
+  wagenpark is op 1 april 2024 overgezet. Elk kenteken komt terug onder een echte
+  entiteit met Transfer IN op die datum: 8 onder `2104` (TMI AP B.V.), 1 onder
+  `2106`. De `2XXX`-rijen zijn de herkomstzijde van die transfer, en worden per
+  ontwerp uitgesloten — de 2.9-query filtert `[Transfer Out Date] = null`
+  ("zodat een contract slechts 1x in rekening genomen wordt") en beide pivots
+  filteren `Transfers (OUT)` op `(blank)`.
+- De **2 rijen zonder Transfer Out** hebben geen commencement, einddatum of
+  transfer in 2026 en zetten dus geen enkele vlag aan.
 
-Bevestigd: `2XXX` is in Anaplan als **volwaardige entiteit** aangemaakt, maar met
-een placeholder-code. Naast haar bestaat `2104 - TMI AP B.V.` met 185 eigen
-contracten, dus het zijn twee aparte populaties. De contractnamen van
-ZorgXchange beginnen wel allemaal met `2104_` (`2XXX__2104_H-139-JN`).
+**Netto: 0 rijen die een beweging in 2026 zouden veroorzaken.** De contracten
+tellen correct mee onder 2104 en 2106; TMI staat terecht op 425.
 
-Er zijn dus **twee gaten**, en beide moeten dicht:
-
-1. **Anaplan** — `2XXX` is geen echte code. Zolang hij niet-numeriek is, blijft
-   de `Int64.Type`-cast de rijen laten sneuvelen.
-2. **MDM** — ZorgXchange staat niet in de Legal Entity Dimension (358 entiteiten,
-   geen match). Zelfs mét een numerieke code krijgt ze dan nog geen PowerHouse.
-
-Te beslissen: krijgt ZorgXchange een eigen code in MDM, of horen die contracten
-onder 2104/TMI? Dat is een master-datakeuze, geen technische.
-
-Speelt al langer: de contracten starten tussen 2019 en 2024, dus voorgaande packs
-missen ze ook. Impact op TMI: de 2.9-snapshot mist er 9 (425 zou 434 zijn), het
-2.10-universum 54.
-
-Het roll-forward script rapporteert vanaf nu elke entity code uit de
-Anaplan-input die niet in de entiteitenlijst voorkomt, met het aantal contracten.
+Wat blijft: zodra iemand een **nieuw** contract op deze entiteit boekt, verdwijnt
+het zonder foutmelding. Daarom rapporteert het roll-forward script voortaan elke
+entity code uit de Anaplan-input die niet in de entiteitenlijst voorkomt, met het
+aantal contracten. Opruimen (echte code in Anaplan + entiteit in MDM, of de
+entiteit afsluiten) is netjes maar niet urgent.
 
 ## Eenmalige template-wijzigingen
 
