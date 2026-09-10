@@ -59,6 +59,7 @@ function main(workbook: ExcelScript.Workbook): string {
   log.push(applyTransfersLookup(workbook))
   log.push(applyLeaseLiabilityFormula(workbook))
   log.push(applyPeriodLabels(workbook))
+  log.push(applyNewLeasePeriodGuard(workbook))
 
   workbook.getApplication().calculate(ExcelScript.CalculationType.fullRebuild)
 
@@ -225,6 +226,26 @@ function applyPeriodLabels(workbook: ExcelScript.Workbook): string {
   details.getRange('E1').setFormula(`=${periodCode}`)
 
   return 'F: period labels (K34, F34, L1, M1, O1/O17, P1/P17, details B1/E1) now derive from ReportingPeriodEnd.'
+}
+
+/**
+ * Change G: flag when the BUILDINGS - NEW list belongs to another period.
+ *
+ * That table is the one part of the sheet that is written rather than derived —
+ * by hand today, by the roll-forward script later. So unlike everything else it
+ * does not follow ReportingPeriodEnd, and changing the parameter leaves a
+ * contract list from a different month sitting under figures for the new one.
+ * This puts that mismatch on screen instead of leaving it to be noticed.
+ */
+function applyNewLeasePeriodGuard(workbook: ExcelScript.Workbook): string {
+  const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
+  sheet.getRange('A17').setFormula(
+    `=LET(d,FILTER(D${DETAILS_NEW_FIRST_ROW}:D60,D${DETAILS_NEW_FIRST_ROW}:D60<>"",""),` +
+    'IF(COUNT(d)=0,"",' +
+    `IF(SUM(--(TEXT(d,"yyyymm")<>TEXT(${SETUP_PERIOD_NAME},"yyyymm")))>0,` +
+    `"CHECK: listed leases are not all from "&TEXT(${SETUP_PERIOD_NAME},"[$-en-US]mmmm yyyy"),"")))`
+  )
+  return 'G: A17 flags a BUILDINGS - NEW list whose commencement dates fall outside the reporting period.'
 }
 
 /**

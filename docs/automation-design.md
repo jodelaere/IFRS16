@@ -340,6 +340,24 @@ doet dit):
 **Gevolg**: één cel stuurt de hele werkmap aan. Het roll-forward script schrijft
 geen labels meer en de flow heeft nog maar één parameter nodig.
 
+### G. Waarschuwing als "BUILDINGS - NEW" uit een andere periode komt
+
+Die tabel is het enige deel van het tabblad dat **geschreven** wordt in plaats
+van afgeleid — nu met de hand, straks door het roll-forward script. Ze volgt de
+parameter dus niet: zet je `ReportingPeriodEnd` op juli, dan blijven de
+augustus-contracten staan onder cijfers die inmiddels over juli gaan.
+
+Het setup-script zet daarom in `Mvt Schedule Details!A17`:
+
+```
+=LET(d,FILTER(D19:D60,D19:D60<>"",""),IF(COUNT(d)=0,"",
+ IF(SUM(--(TEXT(d,"yyyymm")<>TEXT(ReportingPeriodEnd,"yyyymm")))>0,
+ "CHECK: listed leases are not all from "&TEXT(ReportingPeriodEnd,"[$-en-US]mmmm yyyy"),"")))
+```
+
+Leeg zolang alles klopt; zodra een startdatum buiten de rapportagemaand valt,
+staat de waarschuwing pal boven de tabel.
+
 ### E. Lease Liability corrigeren voor betalingsfrequentie (bevinding 5)
 
 Vervang in `Mvt Schedule Details` kolom L (rij 19 en verder) `=H19*G19` door:
