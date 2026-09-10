@@ -270,9 +270,13 @@ function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
 
   // The old static rows and total must go first, or the spill has nowhere to land.
   const spillRowCount = DETAILS_SPILL_LAST_ROW - DETAILS_NEW_FIRST_ROW + 1
-  sheet
-    .getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, spillRowCount, 12)
-    .clear(ExcelScript.ClearApplyTo.contents)
+  const spillRange = sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, spillRowCount, 12)
+  spillRange.clear(ExcelScript.ClearApplyTo.contents)
+
+  // Read the number formats of the first row while it still holds the styling
+  // that was applied to the old static rows — writing the spill formula can
+  // change them.
+  const rowFormats = sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, 1, 12).getNumberFormat()[0]
 
   sheet.getRange(`A${DETAILS_NEW_FIRST_ROW}`).setFormula(
     '=LET(t,Table1,' +
@@ -281,19 +285,41 @@ function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
     `keep,(INDEX(t,,26)="Land and buildings")*(TEXT(INDEX(t,,6),"yyyymm")=TEXT(${SETUP_PERIOD_NAME},"yyyymm")),` +
     'FILTER(HSTACK(CHOOSECOLS(t,1,2,3,6,10,11,14,15,16,26,27),liab),keep,""))'
   )
-  sheet.getRange('L17').setFormula(`=SUM(CHOOSECOLS(A${DETAILS_NEW_FIRST_ROW}#,12))`)
-  sheet.getRange('L17').setNumberFormat('#,##0.00')
-
   // A spill carries no formatting of its own — it shows whatever the cells
-  // already had. Only the six previously populated rows were styled, so a
-  // longer month landed as raw serial dates and unrounded numbers. Tile the
-  // first row's formatting down across the reserved range.
-  sheet
-    .getRangeByIndexes(DETAILS_NEW_FIRST_ROW, 0, spillRowCount - 1, 12)
-    .copyFrom(
-      sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, 1, 12),
-      ExcelScript.RangeCopyType.formats
-    )
+  // already had, so a longer month landed as raw serial dates and unrounded
+  // numbers. Number formats are tiled across the reserved range (invisible
+  // while a cell is empty), and the fill and borders come from a conditional
+  // rule keyed to the spill so they stop exactly where the data does instead
+  // of leaving a stripe down the sheet.
+  const tiled: string[][] = []
+  for (let i = 0; i < spillRowCount; i++) tiled.push(rowFormats)
+  spillRange.setNumberFormat(tiled)
+  spillRange.getFormat().getFill().clear()
 
-  return `H: BUILDINGS - NEW now spills from Table1 for the reporting month; total moved to L17, formatting tiled to row ${DETAILS_SPILL_LAST_ROW}.`
+  // Re-running setup must not stack banding rules, so drop the one this script
+  // wrote before — matched on its formula, to leave any other rule alone.
+  const bandingFormula = `=AND($A${DETAILS_NEW_FIRST_ROW}<>"",ISODD(ROW()-${DETAILS_NEW_FIRST_ROW}))`
+  spillRange.getConditionalFormats().forEach((existing) => {
+    if (existing.getType() !== ExcelScript.ConditionalFormatType.custom) return
+    if (existing.getCustom().getRule().getFormula() === bandingFormula) existing.delete()
+  })
+  const banding = spillRange.addConditionalFormat(ExcelScript.ConditionalFormatType.custom).getCustom()
+  banding.getRule().setFormula(bandingFormula)
+  banding.getFormat().getFill().setColor('#DCE6F1')
+
+  // The total sits above the table: a spill grows and shrinks, so anything
+  // directly beneath it would block it with #SPILL!.
+  const totalLabel = sheet.getRange('K17')
+  totalLabel.setValue('Total')
+  totalLabel.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.right)
+  totalLabel.getFormat().getFont().setBold(true)
+
+  const total = sheet.getRange('L17')
+  total.setFormula(`=SUM(CHOOSECOLS(A${DETAILS_NEW_FIRST_ROW}#,12))`)
+  total.setNumberFormat('#,##0.00')
+  total.getFormat().getFont().setBold(true)
+  total.getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeTop).setStyle(ExcelScript.BorderLineStyle.continuous)
+  total.getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeBottom).setStyle(ExcelScript.BorderLineStyle.double)
+
+  return 'H: BUILDINGS - NEW spills from Table1 for the reporting month; labelled total in K17/L17, banding follows the spill.'
 }

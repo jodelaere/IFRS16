@@ -361,9 +361,23 @@ Bron is **`Table1` (2.10 Input)**, niet `2_10 Output` — die query gooit Fixed
 payment, Lease duration, Leased capacity en Payment frequency weg, en die heeft
 deze tabel juist nodig. De kolomnummers zijn posities in `Table1`.
 
-**Het totaal verhuist naar `L17`**, boven de kop: `=SUM(CHOOSECOLS(A19#,12))`.
-Een spill groeit en krimpt, dus alles wat er direct onder staat zou hem
-blokkeren met `#SPILL!`.
+**Het totaal verhuist naar `L17`**, boven de kop: `=SUM(CHOOSECOLS(A19#,12))`,
+met het label `Total` in `K17`. Een spill groeit en krimpt, dus alles wat er
+direct onder staat zou hem blokkeren met `#SPILL!`.
+
+### Opmaak van de spill
+
+Een spill neemt geen opmaak mee: hij toont wat de cellen al hadden. Alleen de
+zes oorspronkelijk gevulde rijen waren opgemaakt, dus een langere maand landde
+als ruwe datumserienummers en ongeronde bedragen. De setup lost dat in twee
+stappen op:
+
+- De **getalnotaties** van rij 19 worden getegeld over `A19:L200`. Notaties zijn
+  onzichtbaar zolang een cel leeg is, dus dit laat de rest van het blad met rust.
+- De **arcering** komt uit een voorwaardelijke opmaak op datzelfde bereik,
+  `=AND($A19<>"",ISODD(ROW()-19))`. Zo stopt de streep precies waar de data
+  stopt, in plaats van 180 rijen door te lopen. De regel wordt bij een herhaalde
+  setup op zijn formule herkend en vervangen, niet gestapeld.
 
 Dit vervangt twee eerdere wijzigingen:
 
