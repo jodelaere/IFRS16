@@ -78,23 +78,36 @@ function main(workbook: ExcelScript.Workbook): string {
  * new-lease total. That total is read where it lives at the time — L25 before
  * change H moves it, L17 after — so the comparison stays like-for-like.
  */
-function captureCheckFigures(workbook: ExcelScript.Workbook, liabilityCell: string): number[] {
+function captureCheckFigures(workbook: ExcelScript.Workbook, liabilityCell: string): (number | string)[] {
   const movement = workbook.getWorksheet(SETUP_SHEET_MOVEMENT)
   const details = workbook.getWorksheet(SETUP_SHEET_DETAILS)
   return [
-    Number(movement.getRange('F49').getValue()),
-    Number(movement.getRange('K49').getValue()),
-    Number(movement.getRange('G15').getValue()),
-    Number(movement.getRange('G31').getValue()),
-    Number(movement.getRange('F15').getValue()),
-    Number(movement.getRange('F31').getValue()),
-    Number(details.getRange('B15').getValue()),
-    Number(details.getRange('E15').getValue()),
-    Number(details.getRange(liabilityCell).getValue()),
+    readFigure(movement.getRange('F49')),
+    readFigure(movement.getRange('K49')),
+    readFigure(movement.getRange('G15')),
+    readFigure(movement.getRange('G31')),
+    readFigure(movement.getRange('F15')),
+    readFigure(movement.getRange('F31')),
+    readFigure(details.getRange('B15')),
+    readFigure(details.getRange('E15')),
+    readFigure(details.getRange(liabilityCell)),
   ]
 }
 
-function compareCheckFigures(workbook: ExcelScript.Workbook, before: number[]): string {
+/**
+ * Returns the number, or the error text when the cell holds one. Reading these
+ * through Number() would turn #NAME?/#SPILL! into NaN, and every NaN
+ * comparison is false — so a broken formula would have passed verification
+ * silently, which is the one outcome this check exists to prevent.
+ */
+function readFigure(range: ExcelScript.Range): number | string {
+  const value = range.getValue()
+  if (typeof value === 'string' && value.indexOf('#') === 0) return value
+  const asNumber = Number(value)
+  return isNaN(asNumber) ? String(value) : asNumber
+}
+
+function compareCheckFigures(workbook: ExcelScript.Workbook, before: (number | string)[]): string {
   const labels = [
     'CHECK buildings (F49)', 'CHECK vehicles (K49)',
     'Total buildings (G15)', 'Total vehicles (G31)',
@@ -105,9 +118,12 @@ function compareCheckFigures(workbook: ExcelScript.Workbook, before: number[]): 
   const after = captureCheckFigures(workbook, 'L17')
   const moved: string[] = []
   after.forEach((value, index) => {
-    if (Math.abs(value - before[index]) > 0.005) {
-      moved.push(`${labels[index]}: ${before[index]} -> ${value}`)
-    }
+    const wasNumber = typeof before[index] === 'number'
+    const isNumber = typeof value === 'number'
+    const changed = !wasNumber || !isNumber
+      ? String(before[index]) !== String(value)
+      : Math.abs((value as number) - (before[index] as number)) > 0.005
+    if (changed) moved.push(`${labels[index]}: ${before[index]} -> ${value}`)
   })
   return moved.length === 0
     ? 'VERIFICATION OK — no reported figure changed.'
