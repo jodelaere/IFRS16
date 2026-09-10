@@ -164,8 +164,11 @@ function applyDetailsCountLink(workbook: ExcelScript.Workbook): string {
     sheet.getRange(`B${row}`).setFormula(`='${SETUP_SHEET_MOVEMENT}'!P${3 + index}`)
     sheet.getRange(`E${row}`).setFormula(`='${SETUP_SHEET_MOVEMENT}'!P${19 + index}`)
   }
+  // Both totals, not just E15: B15 had been overwritten with a typed value at
+  // some point, so it would have gone stale as soon as column B moved.
+  sheet.getRange('B15').setFormula('=SUM(B3:B14)')
   sheet.getRange('E15').setFormula('=SUM(E3:E14)')
-  return 'C: Mvt Schedule Details count block linked to Movement schedule column P; E15 is now a SUM.'
+  return 'C: Mvt Schedule Details count block linked to Movement schedule column P; B15 and E15 are now SUMs.'
 }
 
 /**
