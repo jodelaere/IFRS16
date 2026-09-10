@@ -47,6 +47,8 @@ const TRANSFER_OUT_RANGE = '$B$68:$B$77'
 const DETAILS_FIRST_PH_ROW = 3
 const DETAILS_PH_COUNT = 12
 const DETAILS_NEW_FIRST_ROW = 19
+/** Rows reserved for the spill: cleared, and formatted so it never lands bare. */
+const DETAILS_SPILL_LAST_ROW = 200
 
 function main(workbook: ExcelScript.Workbook): string {
   const log: string[] = ['IFRS16 template setup']
@@ -267,7 +269,10 @@ function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
   const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
 
   // The old static rows and total must go first, or the spill has nowhere to land.
-  sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, 60, 12).clear(ExcelScript.ClearApplyTo.contents)
+  const spillRowCount = DETAILS_SPILL_LAST_ROW - DETAILS_NEW_FIRST_ROW + 1
+  sheet
+    .getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, spillRowCount, 12)
+    .clear(ExcelScript.ClearApplyTo.contents)
 
   sheet.getRange(`A${DETAILS_NEW_FIRST_ROW}`).setFormula(
     '=LET(t,Table1,' +
@@ -277,6 +282,18 @@ function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
     'FILTER(HSTACK(CHOOSECOLS(t,1,2,3,6,10,11,14,15,16,26,27),liab),keep,""))'
   )
   sheet.getRange('L17').setFormula(`=SUM(CHOOSECOLS(A${DETAILS_NEW_FIRST_ROW}#,12))`)
+  sheet.getRange('L17').setNumberFormat('#,##0.00')
 
-  return `H: BUILDINGS - NEW now spills from Table1 for the reporting month; total moved to L17. Supersedes changes E and G.`
+  // A spill carries no formatting of its own — it shows whatever the cells
+  // already had. Only the six previously populated rows were styled, so a
+  // longer month landed as raw serial dates and unrounded numbers. Tile the
+  // first row's formatting down across the reserved range.
+  sheet
+    .getRangeByIndexes(DETAILS_NEW_FIRST_ROW, 0, spillRowCount - 1, 12)
+    .copyFrom(
+      sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, 1, 12),
+      ExcelScript.RangeCopyType.formats
+    )
+
+  return `H: BUILDINGS - NEW now spills from Table1 for the reporting month; total moved to L17, formatting tiled to row ${DETAILS_SPILL_LAST_ROW}.`
 }
