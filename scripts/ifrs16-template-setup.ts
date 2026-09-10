@@ -50,6 +50,34 @@ const DETAILS_NEW_FIRST_ROW = 19
 /** Rows reserved for the spill: cleared, and formatted so it never lands bare. */
 const DETAILS_SPILL_LAST_ROW = 200
 
+/**
+ * Number formats for the twelve BUILDINGS - NEW columns, in order:
+ * key | Entity | Lease description | commencement | end date selection |
+ * end date | duration | fixed payment | frequency | asset category |
+ * leased capacity | Lease Liability.
+ *
+ * Only the two date columns and the two amount columns need a format of their
+ * own; the rest stay General, which renders text and whole numbers as they are.
+ *
+ * Stated here rather than read back from the sheet: the row they used to be
+ * read from is cleared by this same script, and an empty read makes the
+ * setNumberFormat argument malformed.
+ */
+const DETAILS_NEW_COLUMN_FORMATS = [
+  'General',
+  'General',
+  'General',
+  'dd/mm/yyyy',
+  'General',
+  'dd/mm/yyyy',
+  'General',
+  '#,##0.00',
+  'General',
+  'General',
+  'General',
+  '#,##0.00',
+]
+
 function main(workbook: ExcelScript.Workbook): string {
   const log: string[] = ['IFRS16 template setup']
 
@@ -273,11 +301,6 @@ function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
   const spillRange = sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, spillRowCount, 12)
   spillRange.clear(ExcelScript.ClearApplyTo.contents)
 
-  // Read the number formats of the first row while it still holds the styling
-  // that was applied to the old static rows — writing the spill formula can
-  // change them.
-  const rowFormats = sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, 1, 12).getNumberFormat()[0]
-
   sheet.getRange(`A${DETAILS_NEW_FIRST_ROW}`).setFormula(
     '=LET(t,Table1,' +
     'pay,INDEX(t,,15),dur,INDEX(t,,14),freq,INDEX(t,,16),' +
@@ -287,12 +310,12 @@ function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
   )
   // A spill carries no formatting of its own — it shows whatever the cells
   // already had, so a longer month landed as raw serial dates and unrounded
-  // numbers. Number formats are tiled across the reserved range (invisible
-  // while a cell is empty), and the fill and borders come from a conditional
-  // rule keyed to the spill so they stop exactly where the data does instead
-  // of leaving a stripe down the sheet.
+  // numbers. The number formats are tiled across the reserved range (invisible
+  // while a cell is empty), and the shading comes from a conditional rule keyed
+  // to the spill so it stops exactly where the data does instead of leaving a
+  // stripe down the sheet.
   const tiled: string[][] = []
-  for (let i = 0; i < spillRowCount; i++) tiled.push(rowFormats)
+  for (let i = 0; i < spillRowCount; i++) tiled.push(DETAILS_NEW_COLUMN_FORMATS.slice())
   spillRange.setNumberFormat(tiled)
   spillRange.getFormat().getFill().clear()
 
