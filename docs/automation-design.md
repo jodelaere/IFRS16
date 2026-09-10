@@ -73,7 +73,37 @@ Beide blokken (buildings rij 3-14, vehicles rij 19-30) hebben dezelfde structuur
 | L | Plug huidige maand | **manueel** — telt op in de E-formule |
 | M | Plug vorige maand | historiek |
 | O | Vorige maand | **getypte waarde** (het vorige-maandcijfer) |
-| P | mvt P{nn} | `=G-O` — de echte maandmutatie |
+| P | mvt P{nn} | `=G-O` — zie hieronder, dit is **niet** het aantal nieuwe contracten |
+
+### Wat kolom P wél en niet is
+
+`P = G - O` is het verschil tussen het totaal van deze maand en het totaal dat
+je **vorige maand gerapporteerd hebt** (kolom O is een getypte momentopname).
+Nieuw en beëindigd zijn daarin al tegen elkaar weggestreept, en er zit meer in
+dan de maand zelf.
+
+Voor P8 2026, buildings:
+
+| | |
+|---:|---|
+| +6 | gestart in augustus |
+| −22 | afgelopen in augustus |
+| +5 | gestart in juli, pas in augustus in Anaplan ingebracht |
+| +16 | stonden in juli als beëindigd, hebben nu een transfer-out-datum |
+| **+5** | = `1.317 − 1.312` |
+
+De eerste twee regels zijn de echte augustusbeweging (−16). De laatste twee zijn
+**herziening van juli**: de werkmap bewaart juli niet, hij herrekent het uit de
+export die hij krijgt, en Anaplan is sindsdien blijven bewegen. Vraag je de
+augustus-export naar juli, dan zegt hij 1.333 waar het juli-bestand 1.312 zei.
+
+ABY is het scherpste voorbeeld: nul nieuw en nul beëindigd in augustus, en toch
+`+2` — twee contracten die in de juli-export als beëindigd stonden, lopen in de
+augustus-export door.
+
+Dit is geen fout en is niet te vermijden zolang de bron een levend model is. Wie
+wil weten wat er in de maand zelf bijgekomen is, moet in de tabel
+**BUILDINGS - NEW** kijken (ingangsdatum in de rapportagemaand), niet in kolom P.
 
 ### Wat de plug is
 
