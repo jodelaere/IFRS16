@@ -33,9 +33,17 @@ const SETUP_PERIOD_CELL = 'B7'
 /** P8 2026 — matches the workbook this is first run against. */
 const SETUP_PERIOD_INITIAL = '2026-08-31'
 
-/** Entity List rows 3..360 mirror Entity List PowerBI rows 4..361 (358 entities). */
+/**
+ * Entity List rows 3.. mirror Entity List PowerBI rows 4.., one row lower.
+ *
+ * MDM held 358 entities when this was written, exactly filling the Power BI
+ * table at A3:S361. Sized to 500 so an entity added in MDM still lands here
+ * instead of falling off the end, where its contracts would silently lose
+ * their PowerHouse. The rows past the source table stay blank: every formula
+ * is guarded by IF(source="","",...).
+ */
 const ENTITY_FIRST_TARGET_ROW = 3
-const ENTITY_ROW_COUNT = 358
+const ENTITY_ROW_COUNT = 500
 const ENTITY_SOURCE_OFFSET = 1
 
 /** Transfers block: rows 82-91, fed by the TRANSFER IN and OUT pivots. */

@@ -283,8 +283,9 @@ Wat er inhoudelijk verandert:
 
 ### B. Entity List aansluiten op de Power BI-tab (bevinding 2)
 
-Laat de lookups ongemoeid (24.000+ formules) en voed de oude tab uit de nieuwe.
-Zet in `Entity List` op rij 3 en vul door tot rij 360:
+Laat de lookups ongemoeid (24.772 formules, verdeeld over `2_10 Output` en
+`2_9 Output`) en voed de oude tab uit de nieuwe. Zet in `Entity List` op rij 3
+en vul door tot rij 502:
 
 ```
 A3  =IF('Entity List PowerBI'!A4="","",IFERROR(VALUE('Entity List PowerBI'!A4),'Entity List PowerBI'!A4))
@@ -299,6 +300,17 @@ D3  ='Entity List PowerBI'!G4
 > een kale verwijzing maakt van élke opzoeking `#N/A` en wist de volledige
 > PowerHouse-mapping. De `IFERROR` houdt echt niet-numerieke codes als tekst,
 > waardoor die zichtbaar onopgelost blijven in plaats van stil te worden omgezet.
+
+> **Waarom tot rij 502 en niet tot 360.** MDM telde 358 entiteiten, precies de
+> omvang van de Power BI-tabel (`A3:S361`). Op maat gesneden zou een entiteit
+> die er in MDM bijkomt eraf vallen, en dan verliezen zijn contracten stil hun
+> PowerHouse. De rijen voorbij de brontabel blijven leeg: elke formule zit in
+> `IF(bron="","",...)`.
+
+> **De tab kan niet weg.** Hij bevat geen handmatige data meer, maar hij is wel
+> de typeconversie tussen de tekstcodes van Power BI en de Int64-codes waarmee
+> de output-tabs opzoeken. Verwijderen maakt 24.772 formules `#REF!`. Verbergen
+> mag.
 
 ### C. Mvt Schedule Details koppelen (haalt een manuele stap weg)
 
