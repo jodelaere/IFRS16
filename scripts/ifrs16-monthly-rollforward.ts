@@ -78,6 +78,12 @@ interface RollForwardParams {
 
 const SHEET_MOVEMENT = 'Movement schedule'
 const SHEET_ENTITY_LIST_PBI = 'Entity List PowerBI'
+const SHEET_DETAILS = 'Mvt Schedule Details'
+
+/** BUILDINGS - NEW: spill formula in A19, spanning A..L, capped at row 200. */
+const DETAILS_NEW_FIRST_ROW = 19
+const DETAILS_SPILL_LAST_ROW = 200
+const DETAILS_COLUMN_COUNT = 12
 
 /** Anaplan data lands in these Excel Tables; the Power Queries read them by name. */
 const TABLE_29_INPUT = 'Table2.9'
@@ -132,6 +138,7 @@ function main(
   shiftPlugColumn(workbook)
 
   refreshQueriesAndPivots(workbook)
+  styleNewBuildingsSpill(workbook)
 
   return buildReviewReport(workbook, params)
 }
@@ -235,6 +242,53 @@ function refreshQueriesAndPivots(workbook: ExcelScript.Workbook) {
   workbook.refreshAllPowerQueries()
   workbook.getPivotTables().forEach((pivotTable) => pivotTable.refresh())
   workbook.getApplication().calculate(ExcelScript.CalculationType.fullRebuild)
+}
+
+/**
+ * Dress the BUILDINGS - NEW spill (template change H).
+ *
+ * A spill carries no formatting of its own — it shows whatever the cells
+ * already had, so a month with more contracts than the last one lands as raw
+ * serial dates and unrounded amounts. Row 19 is the styled template; tile it
+ * over exactly as many rows as the spill produced this month and strip the
+ * formatting off the rest, so column A's blue and column L's yellow stop where
+ * the data stops instead of running on to row 200.
+ *
+ * Row 19 itself is never cleared — it is the template for next month.
+ */
+function styleNewBuildingsSpill(workbook: ExcelScript.Workbook) {
+  const sheet = workbook.getWorksheet(SHEET_DETAILS)
+  if (!sheet) throw new Error(`Sheet "${SHEET_DETAILS}" not found.`)
+
+  const reserved = DETAILS_SPILL_LAST_ROW - DETAILS_NEW_FIRST_ROW + 1
+  const keys = sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, reserved, 1).getValues()
+  let filled = 0
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i][0]
+    if (key === null || key === undefined || String(key) === '') break
+    filled++
+  }
+
+  if (filled > 1) {
+    sheet
+      .getRangeByIndexes(DETAILS_NEW_FIRST_ROW, 0, filled - 1, DETAILS_COLUMN_COUNT)
+      .copyFrom(
+        sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, 1, DETAILS_COLUMN_COUNT),
+        ExcelScript.RangeCopyType.formats
+      )
+  }
+
+  const firstBlankRow = DETAILS_NEW_FIRST_ROW + (filled > 1 ? filled : 1)
+  if (firstBlankRow <= DETAILS_SPILL_LAST_ROW) {
+    sheet
+      .getRangeByIndexes(
+        firstBlankRow - 1,
+        0,
+        DETAILS_SPILL_LAST_ROW - firstBlankRow + 1,
+        DETAILS_COLUMN_COUNT
+      )
+      .clear(ExcelScript.ClearApplyTo.formats)
+  }
 }
 
 /**

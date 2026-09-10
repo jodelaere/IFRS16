@@ -369,19 +369,18 @@ direct onder staat zou hem blokkeren met `#SPILL!`.
 
 Een spill neemt geen opmaak mee: hij toont wat de cellen al hadden. Alleen de
 zes oorspronkelijk gevulde rijen waren opgemaakt, dus een langere maand landde
-als ruwe datumserienummers en ongeronde bedragen. De setup lost dat in twee
-stappen op:
+als ruwe datumserienummers en ongeronde bedragen.
 
-- De **getalnotaties** worden getegeld over `A19:L200`: `dd/mm/yyyy` voor de
-  twee datumkolommen, `#,##0.00` voor fixed payment en lease liability, en
-  `General` voor de rest. Notaties zijn onzichtbaar zolang een cel leeg is, dus
-  dit laat de rest van het blad met rust. Ze staan vast in het script in plaats
-  van te worden teruggelezen uit rij 19 — datzelfde script wist die rij, en een
-  lege teruglezing maakt het argument van `setNumberFormat` ongeldig.
-- De **arcering** komt uit een voorwaardelijke opmaak op datzelfde bereik,
-  `=AND($A19<>"",ISODD(ROW()-19))`. Zo stopt de streep precies waar de data
-  stopt, in plaats van 180 rijen door te lopen. De regel wordt bij een herhaalde
-  setup op zijn formule herkend en vervangen, niet gestapeld.
+De opmaak van rij 19 — de datumnotaties in D en F, `#,##0.00` in H en L, de
+dunne randen, de blauwe vulling in kolom A en de gele in kolom L — wordt daarom
+naar beneden gekopieerd over **precies zoveel rijen als de spill dit keer
+oplevert**, en van de rijen daaronder wordt de opmaak gewist. Zo stopt de
+kleur waar de data stopt in plaats van door te lopen tot rij 200.
+
+Rij 19 zelf wordt nooit gewist: dat is het sjabloon voor de volgende maand.
+
+Het aantal rijen verandert elke maand, dus dit staat in **beide** scripts: de
+setup doet het één keer, en het maandscript herhaalt het na de refresh.
 
 Dit vervangt twee eerdere wijzigingen:
 

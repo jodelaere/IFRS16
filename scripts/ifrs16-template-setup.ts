@@ -50,33 +50,8 @@ const DETAILS_NEW_FIRST_ROW = 19
 /** Rows reserved for the spill: cleared, and formatted so it never lands bare. */
 const DETAILS_SPILL_LAST_ROW = 200
 
-/**
- * Number formats for the twelve BUILDINGS - NEW columns, in order:
- * key | Entity | Lease description | commencement | end date selection |
- * end date | duration | fixed payment | frequency | asset category |
- * leased capacity | Lease Liability.
- *
- * Only the two date columns and the two amount columns need a format of their
- * own; the rest stay General, which renders text and whole numbers as they are.
- *
- * Stated here rather than read back from the sheet: the row they used to be
- * read from is cleared by this same script, and an empty read makes the
- * setNumberFormat argument malformed.
- */
-const DETAILS_NEW_COLUMN_FORMATS = [
-  'General',
-  'General',
-  'General',
-  'dd/mm/yyyy',
-  'General',
-  'dd/mm/yyyy',
-  'General',
-  '#,##0.00',
-  'General',
-  'General',
-  'General',
-  '#,##0.00',
-]
+/** BUILDINGS - NEW spans A..L. */
+const DETAILS_COLUMN_COUNT = 12
 
 function main(workbook: ExcelScript.Workbook): string {
   const log: string[] = ['IFRS16 template setup']
@@ -296,10 +271,13 @@ function applyPeriodLabels(workbook: ExcelScript.Workbook): string {
 function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
   const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
 
-  // The old static rows and total must go first, or the spill has nowhere to land.
+  // The old static rows and total must go first, or the spill has nowhere to
+  // land. Row 19 keeps its formatting: it is the template every spilled row is
+  // styled from.
   const spillRowCount = DETAILS_SPILL_LAST_ROW - DETAILS_NEW_FIRST_ROW + 1
-  const spillRange = sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, spillRowCount, 12)
-  spillRange.clear(ExcelScript.ClearApplyTo.contents)
+  sheet
+    .getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, spillRowCount, DETAILS_COLUMN_COUNT)
+    .clear(ExcelScript.ClearApplyTo.contents)
 
   sheet.getRange(`A${DETAILS_NEW_FIRST_ROW}`).setFormula(
     '=LET(t,Table1,' +
@@ -308,27 +286,6 @@ function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
     `keep,(INDEX(t,,26)="Land and buildings")*(TEXT(INDEX(t,,6),"yyyymm")=TEXT(${SETUP_PERIOD_NAME},"yyyymm")),` +
     'FILTER(HSTACK(CHOOSECOLS(t,1,2,3,6,10,11,14,15,16,26,27),liab),keep,""))'
   )
-  // A spill carries no formatting of its own — it shows whatever the cells
-  // already had, so a longer month landed as raw serial dates and unrounded
-  // numbers. The number formats are tiled across the reserved range (invisible
-  // while a cell is empty), and the shading comes from a conditional rule keyed
-  // to the spill so it stops exactly where the data does instead of leaving a
-  // stripe down the sheet.
-  const tiled: string[][] = []
-  for (let i = 0; i < spillRowCount; i++) tiled.push(DETAILS_NEW_COLUMN_FORMATS.slice())
-  spillRange.setNumberFormat(tiled)
-  spillRange.getFormat().getFill().clear()
-
-  // Re-running setup must not stack banding rules, so drop the one this script
-  // wrote before — matched on its formula, to leave any other rule alone.
-  const bandingFormula = `=AND($A${DETAILS_NEW_FIRST_ROW}<>"",ISODD(ROW()-${DETAILS_NEW_FIRST_ROW}))`
-  spillRange.getConditionalFormats().forEach((existing) => {
-    if (existing.getType() !== ExcelScript.ConditionalFormatType.custom) return
-    if (existing.getCustom().getRule().getFormula() === bandingFormula) existing.delete()
-  })
-  const banding = spillRange.addConditionalFormat(ExcelScript.ConditionalFormatType.custom).getCustom()
-  banding.getRule().setFormula(bandingFormula)
-  banding.getFormat().getFill().setColor('#DCE6F1')
 
   // The total sits above the table: a spill grows and shrinks, so anything
   // directly beneath it would block it with #SPILL!.
@@ -344,5 +301,61 @@ function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
   total.getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeTop).setStyle(ExcelScript.BorderLineStyle.continuous)
   total.getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeBottom).setStyle(ExcelScript.BorderLineStyle.double)
 
-  return 'H: BUILDINGS - NEW spills from Table1 for the reporting month; labelled total in K17/L17, banding follows the spill.'
+  const styled = styleNewBuildingsSpill(workbook)
+  return `H: BUILDINGS - NEW spills from Table1 for the reporting month; labelled total in K17/L17, ${styled} row(s) styled.`
+}
+
+/**
+ * Dress the spill.
+ *
+ * A spill carries no formatting of its own — it shows whatever the cells
+ * already had. Only the six originally populated rows were styled, so a longer
+ * month landed as raw serial dates and unrounded amounts. Tiling the formatting
+ * across all 182 reserved rows fixes that but leaves column A's blue and column
+ * L's yellow running far below the data.
+ *
+ * So tile it over exactly as many rows as the spill actually produced, and
+ * strip the formatting off the rest. The monthly script repeats this after its
+ * refresh, because the row count changes every month.
+ *
+ * Row 19 is the template and is never cleared, even when the month is empty.
+ */
+function styleNewBuildingsSpill(workbook: ExcelScript.Workbook): number {
+  const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
+
+  // The spill was just written or just refreshed; read it after a recalculation
+  // or the row count below is the previous month's.
+  workbook.getApplication().calculate(ExcelScript.CalculationType.full)
+
+  const reserved = DETAILS_SPILL_LAST_ROW - DETAILS_NEW_FIRST_ROW + 1
+  const keys = sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, reserved, 1).getValues()
+  let filled = 0
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i][0]
+    if (key === null || key === undefined || String(key) === '') break
+    filled++
+  }
+
+  if (filled > 1) {
+    sheet
+      .getRangeByIndexes(DETAILS_NEW_FIRST_ROW, 0, filled - 1, DETAILS_COLUMN_COUNT)
+      .copyFrom(
+        sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, 1, DETAILS_COLUMN_COUNT),
+        ExcelScript.RangeCopyType.formats
+      )
+  }
+
+  const firstBlankRow = DETAILS_NEW_FIRST_ROW + (filled > 1 ? filled : 1)
+  if (firstBlankRow <= DETAILS_SPILL_LAST_ROW) {
+    sheet
+      .getRangeByIndexes(
+        firstBlankRow - 1,
+        0,
+        DETAILS_SPILL_LAST_ROW - firstBlankRow + 1,
+        DETAILS_COLUMN_COUNT
+      )
+      .clear(ExcelScript.ClearApplyTo.formats)
+  }
+
+  return filled
 }
