@@ -60,15 +60,15 @@ const LEASE_ROW_HEADERS: (keyof LeaseRow)[] = [
   'LastModificationStatus', 'AssetCategory', 'LeasedCapacity', 'TypeMotor',
 ]
 
+/**
+ * One parameter drives everything. Since template change F every period label
+ * in the workbook is a formula over ReportingPeriodEnd, so the script sets that
+ * cell and the headings follow — no label arguments, and nothing that can drift
+ * out of step with the figures.
+ */
 interface RollForwardParams {
-  /** Last day of the new reporting period, e.g. "2026-09-30". Drives every label. */
+  /** Last day of the new reporting period, e.g. "2026-09-30". */
   periodEndDate: string
-  /** e.g. "September 2026" — the month label typed into the schedule headers. */
-  newMonthLabel: string
-  /** e.g. "August 2026" — becomes the comparative column header. */
-  previousMonthLabel: string
-  /** e.g. "P09" — used for the "mvt P09" column headers. */
-  newPeriodCode: string
 }
 
 // --- Verified sheet, table and cell references (P8 2026 workbook) -----------
@@ -94,13 +94,6 @@ const REPORTING_PERIOD_NAME = 'ReportingPeriodEnd'
 const BUILDINGS_FIRST_ROW = 3
 const VEHICLES_FIRST_ROW = 19
 const POWERHOUSE_COUNT = 12
-
-/**
- * G1 and G17 are formulas (=K34), so the current-month label is edited once in
- * the presentation table at row 34 and both block headers follow.
- */
-const CELL_MONTH_LABEL_BUILDINGS = 'F34'
-const CELL_MONTH_LABEL_VEHICLES = 'K34'
 
 /** Entity List PowerBI: Table_ExternalData_1 at A3:S361, headers row 3, data row 4. */
 const ENTITY_LIST_PBI_FIRST_DATA_ROW = 4
@@ -134,7 +127,7 @@ function main(
   refreshQueriesAndPivots(workbook)
 
   writePreviousMonthCounts(workbook, previousMonthCounts)
-  rollMovementSchedule(workbook, params)
+  shiftPlugColumn(workbook)
   appendNewBuildings(workbook, anaplan210Rows, params)
 
   refreshQueriesAndPivots(workbook)
@@ -244,7 +237,8 @@ function refreshQueriesAndPivots(workbook: ExcelScript.Workbook) {
 }
 
 /**
- * Rolls the period labels and shifts the plug column one month back.
+ * Shifts the plug column one month back. Labels are not touched — since
+ * template change F they are formulas over ReportingPeriodEnd.
  *
  * The plug in column L feeds the Terminated contracts formula
  * (E = -XLOOKUP(pivot OUT) + L), so it reconciles the YTD build-up
@@ -256,35 +250,13 @@ function refreshQueriesAndPivots(workbook: ExcelScript.Workbook) {
  * report states how much extra plug each PowerHouse needs to tie. Deliberately
  * not auto-plugged: forcing the tie would mask genuine data errors.
  */
-function rollMovementSchedule(workbook: ExcelScript.Workbook, params: RollForwardParams) {
+function shiftPlugColumn(workbook: ExcelScript.Workbook) {
   const sheet = workbook.getWorksheet(SHEET_MOVEMENT)
   if (!sheet) throw new Error(`Sheet "${SHEET_MOVEMENT}" not found.`)
-
-  const periodEnd = new Date(params.periodEndDate)
-  const month = String(periodEnd.getUTCMonth() + 1).padStart(2, '0')
-  const previousMonth = String(periodEnd.getUTCMonth() === 0 ? 12 : periodEnd.getUTCMonth()).padStart(2, '0')
-  const year = periodEnd.getUTCFullYear()
-
-  sheet.getRange(CELL_MONTH_LABEL_BUILDINGS).setValue(params.newMonthLabel)
-  sheet.getRange(CELL_MONTH_LABEL_VEHICLES).setValue(params.newMonthLabel)
-
-  sheet.getRange('L1').setValue(`Plug ${month} ${year}`)
-  sheet.getRange('M1').setValue(`Plug ${previousMonth} ${year}`)
-
-  for (const headerRow of [1, 17]) {
-    sheet.getRange(`O${headerRow}`).setValue(params.previousMonthLabel)
-    sheet.getRange(`P${headerRow}`).setValue(`mvt ${params.newPeriodCode}`)
-  }
 
   for (const firstRow of [BUILDINGS_FIRST_ROW, VEHICLES_FIRST_ROW]) {
     const plugs = sheet.getRange(`L${firstRow}:L${firstRow + POWERHOUSE_COUNT - 1}`).getValues()
     sheet.getRange(`M${firstRow}:M${firstRow + POWERHOUSE_COUNT - 1}`).setValues(plugs)
-  }
-
-  const details = workbook.getWorksheet(SHEET_MVT_DETAILS)
-  if (details) {
-    details.getRange('B1').setValue(`mvt ${params.newPeriodCode}`)
-    details.getRange('E1').setValue(`mvt ${params.newPeriodCode}`)
   }
 }
 
@@ -356,7 +328,7 @@ function appendNewBuildings(workbook: ExcelScript.Workbook, currentExport: Lease
  * straight into the notification instead of being buried in a script log.
  */
 function buildReviewReport(workbook: ExcelScript.Workbook, params: RollForwardParams): string {
-  const lines: string[] = [`IFRS16 roll-forward to ${params.newMonthLabel} (${params.newPeriodCode})`]
+  const lines: string[] = [`IFRS16 roll-forward, reporting period ending ${params.periodEndDate}`]
 
   const movement = workbook.getWorksheet(SHEET_MOVEMENT)
   if (movement) {

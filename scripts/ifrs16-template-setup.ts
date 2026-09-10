@@ -58,6 +58,7 @@ function main(workbook: ExcelScript.Workbook): string {
   log.push(applyDetailsCountLink(workbook))
   log.push(applyTransfersLookup(workbook))
   log.push(applyLeaseLiabilityFormula(workbook))
+  log.push(applyPeriodLabels(workbook))
 
   workbook.getApplication().calculate(ExcelScript.CalculationType.fullRebuild)
 
@@ -187,6 +188,43 @@ function applyTransfersLookup(workbook: ExcelScript.Workbook): string {
     }
   }
   return `D: transfers block rows ${TRANSFERS_FIRST_ROW}-${TRANSFERS_LAST_ROW} now match PowerHouses by name instead of by row position.`
+}
+
+/**
+ * Change F: derive every period label from ReportingPeriodEnd.
+ *
+ * K34 was a typed label, so changing the parameter moved the figures but left
+ * the heading on the old month — July data under an "August 2026" header, which
+ * is exactly the kind of mismatch nobody catches in a board pack. Deriving the
+ * labels makes that impossible, and means the monthly roll needs no label edits
+ * at all: one cell drives the whole workbook.
+ *
+ * [$-en-US] forces English month names regardless of the Excel display language,
+ * matching the labels already in the file.
+ */
+function applyPeriodLabels(workbook: ExcelScript.Workbook): string {
+  const movement = workbook.getWorksheet(SETUP_SHEET_MOVEMENT)
+  const details = workbook.getWorksheet(SETUP_SHEET_DETAILS)
+
+  const currentMonth = `TEXT(${SETUP_PERIOD_NAME},"[$-en-US]mmmm yyyy")`
+  const priorMonth = `TEXT(EDATE(${SETUP_PERIOD_NAME},-1),"[$-en-US]mmmm yyyy")`
+  const periodCode = `"mvt P"&TEXT(MONTH(${SETUP_PERIOD_NAME}),"00")`
+  const plugCurrent = `"Plug "&TEXT(MONTH(${SETUP_PERIOD_NAME}),"00")&" "&YEAR(${SETUP_PERIOD_NAME})`
+  const plugPrior = `"Plug "&TEXT(MONTH(EDATE(${SETUP_PERIOD_NAME},-1)),"00")&" "&YEAR(EDATE(${SETUP_PERIOD_NAME},-1))`
+
+  // G1 and G17 already read =K34, so they follow automatically.
+  movement.getRange('K34').setFormula(`=${currentMonth}`)
+  movement.getRange('F34').setFormula(`=${currentMonth}`)
+  movement.getRange('L1').setFormula(`=${plugCurrent}`)
+  movement.getRange('M1').setFormula(`=${plugPrior}`)
+  for (const row of [1, 17]) {
+    movement.getRange(`O${row}`).setFormula(`=${priorMonth}`)
+    movement.getRange(`P${row}`).setFormula(`=${periodCode}`)
+  }
+  details.getRange('B1').setFormula(`=${periodCode}`)
+  details.getRange('E1').setFormula(`=${periodCode}`)
+
+  return 'F: period labels (K34, F34, L1, M1, O1/O17, P1/P17, details B1/E1) now derive from ReportingPeriodEnd.'
 }
 
 /**

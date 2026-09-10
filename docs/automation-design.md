@@ -314,6 +314,32 @@ berekening blijft kloppen als de pivotrijen verschuiven:
 C82  =IFERROR(XLOOKUP($B82,$B$49:$B$59,C$49:C$59),0) - IFERROR(XLOOKUP($B82,$B$67:$B$77,C$67:C$77),0)
 ```
 
+### F. Periodelabels afleiden uit de parameter
+
+`K34` was een getypt label, dus na het aanpassen van `ReportingPeriodEnd`
+verschoven de cijfers wél maar de kop niet — julidata onder een "August
+2026"-kop. Dat is precies het soort mismatch dat in een board pack niet opvalt.
+
+Alle labels worden daarom formules over dezelfde parameter (het setup-script
+doet dit):
+
+| Cel | Formule |
+|---|---|
+| `Movement schedule` K34, F34 | `=TEXT(ReportingPeriodEnd,"[$-en-US]mmmm yyyy")` |
+| `Movement schedule` O1, O17 | `=TEXT(EDATE(ReportingPeriodEnd,-1),"[$-en-US]mmmm yyyy")` |
+| `Movement schedule` P1, P17 | `="mvt P"&TEXT(MONTH(ReportingPeriodEnd),"00")` |
+| `Movement schedule` L1 | `="Plug "&TEXT(MONTH(ReportingPeriodEnd),"00")&" "&YEAR(ReportingPeriodEnd)` |
+| `Movement schedule` M1 | idem met `EDATE(ReportingPeriodEnd,-1)` |
+| `Mvt Schedule Details` B1, E1 | `="mvt P"&TEXT(MONTH(ReportingPeriodEnd),"00")` |
+
+`G1` en `G17` lezen al `=K34` en volgen dus automatisch. `B34`/`G34`
+("December 2025") zijn de jaaropening en blijven staan.
+
+`[$-en-US]` forceert Engelse maandnamen, ongeacht de taal van de Excel-installatie.
+
+**Gevolg**: één cel stuurt de hele werkmap aan. Het roll-forward script schrijft
+geen labels meer en de flow heeft nog maar één parameter nodig.
+
 ### E. Lease Liability corrigeren voor betalingsfrequentie (bevinding 5)
 
 Vervang in `Mvt Schedule Details` kolom L (rij 19 en verder) `=H19*G19` door:
@@ -345,15 +371,14 @@ start handmatig zodat de eerste maanden controleerbaar zijn.
 | Naam | Expressie | Resultaat |
 |---|---|---|
 | `NewYYYYMM` | `formatDateTime(triggerBody()['date'],'yyyyMM')` | `202609` |
-| `NewPeriodCode` | `concat('P',formatDateTime(triggerBody()['date'],'MM'))` | `P09` |
-| `NewMonthLabel` | `formatDateTime(triggerBody()['date'],'MMMM yyyy')` | `September 2026` |
-| `PrevMonthLabel` | `formatDateTime(addMonths(triggerBody()['date'],-1),'MMMM yyyy')` | `August 2026` |
 | `NewFolder` | `concat(formatDateTime(triggerBody()['date'],'yyyy'),'/P',formatDateTime(triggerBody()['date'],'M'),' ',formatDateTime(triggerBody()['date'],'yyyy'),'/IFRS 16')` | `2026/P9 2026/IFRS 16` |
 | `PrevFolder` | idem met `addMonths(...,-1)` | `2026/P8 2026/IFRS 16` |
 
-> ⚠️ `formatDateTime` geeft Engelse maandnamen — dat komt overeen met de labels in
-> het bestand (`August 2026`). De mapnaam gebruikt `M` zonder voorloopnul
-> (`P9 2026`), de bestandsnaam `MM` mét (`202609`). Zie de bestaande mappen.
+> ⚠️ De mapnaam gebruikt `M` zonder voorloopnul (`P9 2026`), de bestandsnaam `MM`
+> mét (`202609`). Zie de bestaande mappen.
+
+Sinds template-wijziging F leidt de werkmap alle periodelabels zelf af uit
+`ReportingPeriodEnd`, dus er zijn geen aparte label-expressies meer nodig.
 
 ### 3. Vorige board pack ophalen — "Get files (properties only)"
 
@@ -393,12 +418,10 @@ Op het gekopieerde bestand, script `ifrs16-monthly-rollforward`:
 | `anaplan29Rows` | output van de 2.9-lijst |
 | `anaplan210Rows` | output van de 2.10-lijst |
 | `params/periodEndDate` | `PeriodEnd` |
-| `params/newMonthLabel` | `NewMonthLabel` |
-| `params/previousMonthLabel` | `PrevMonthLabel` |
-| `params/newPeriodCode` | `NewPeriodCode` |
 
-Het script zet zelf `ReportingPeriodEnd`, legt kolom G vast vóór het inladen,
-ververst en retourneert een reviewrapport als tekst.
+Het script zet zelf `ReportingPeriodEnd` (waarna alle labels volgen), legt
+kolom G vast vóór het inladen, ververst en retourneert een reviewrapport als
+tekst.
 
 ### 7. Notificatie — "Send an email (V2)" of Teams-bericht
 
@@ -414,10 +437,10 @@ Zonder dat faalt de flow stil en staat er een half bijgewerkt board pack in de m
 - Anaplan-data in `Table2.9` en `Table1` schrijven (mét tabel-resize, want de
   queries lezen die tabellen op naam; in blokken van 5.000 rijen).
 - Power Queries + alle 5 PivotTables verversen, dan volledig herrekenen.
+- `ReportingPeriodEnd` zetten — alle periodelabels volgen daaruit (wijziging F).
 - Kolom G vastleggen **voor** het inladen (dat is de vorige maand) en na de
   refresh wegschrijven naar kolom O.
-- Maandlabels rollen (`F34`/`K34`, `L1`/`M1`, `O1`/`O17`, `P1`/`P17`) en de
-  plug-kolom één maand opschuiven (L → M).
+- De plug-kolom één maand opschuiven (L → M).
 - Nieuwe buildings detecteren en voorinvullen in "BUILDINGS - NEW".
 - Reviewrapport teruggeven.
 
