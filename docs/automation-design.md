@@ -120,6 +120,9 @@ blijven het hele jaar staan.
 - **Er is géén "VEHICLES - NEW"-tabel.** Vehicles worden geteld, niet
   gedetailleerd — conform het proces zoals beschreven.
 
+> Dit beschrijft de tab **zoals aangetroffen**. Wijzigingen C en H hieronder
+> maken het telblok en de BUILDINGS - NEW-tabel formuledreven.
+
 ## Bevindingen
 
 ### 1. ⚠️ De rapportageperiode komt uit de systeemklok
@@ -340,33 +343,37 @@ doet dit):
 **Gevolg**: één cel stuurt de hele werkmap aan. Het roll-forward script schrijft
 geen labels meer en de flow heeft nog maar één parameter nodig.
 
-### G. Waarschuwing als "BUILDINGS - NEW" uit een andere periode komt
+### H. "BUILDINGS - NEW" afleiden uit de Anaplan-data
 
-Die tabel is het enige deel van het tabblad dat **geschreven** wordt in plaats
-van afgeleid — nu met de hand, straks door het roll-forward script. Ze volgt de
-parameter dus niet: zet je `ReportingPeriodEnd` op juli, dan blijven de
-augustus-contracten staan onder cijfers die inmiddels over juli gaan.
-
-Het setup-script zet daarom in `Mvt Schedule Details!A17`:
+Dit was het laatste deel van de werkmap dat de parameter niet volgde: zet je de
+periode op juli, dan bleven de augustus-contracten staan onder juli-cijfers.
+Eén spill-formule in `A19` lost dat blijvend op:
 
 ```
-=LET(d,FILTER(D19:D60,D19:D60<>"",""),IF(COUNT(d)=0,"",
- IF(SUM(--(TEXT(d,"yyyymm")<>TEXT(ReportingPeriodEnd,"yyyymm")))>0,
- "CHECK: listed leases are not all from "&TEXT(ReportingPeriodEnd,"[$-en-US]mmmm yyyy"),"")))
+=LET(t,Table1,
+ pay,INDEX(t,,15), dur,INDEX(t,,14), freq,INDEX(t,,16),
+ liab,pay*dur/IFS(freq="Monthly",1,freq="Quarterly",3),
+ keep,(INDEX(t,,26)="Land and buildings")*(TEXT(INDEX(t,,6),"yyyymm")=TEXT(ReportingPeriodEnd,"yyyymm")),
+ FILTER(HSTACK(CHOOSECOLS(t,1,2,3,6,10,11,14,15,16,26,27),liab),keep,""))
 ```
 
-Leeg zolang alles klopt; zodra een startdatum buiten de rapportagemaand valt,
-staat de waarschuwing pal boven de tabel.
+Bron is **`Table1` (2.10 Input)**, niet `2_10 Output` — die query gooit Fixed
+payment, Lease duration, Leased capacity en Payment frequency weg, en die heeft
+deze tabel juist nodig. De kolomnummers zijn posities in `Table1`.
 
-### E. Lease Liability corrigeren voor betalingsfrequentie (bevinding 5)
+**Het totaal verhuist naar `L17`**, boven de kop: `=SUM(CHOOSECOLS(A19#,12))`.
+Een spill groeit en krimpt, dus alles wat er direct onder staat zou hem
+blokkeren met `#SPILL!`.
 
-Vervang in `Mvt Schedule Details` kolom L (rij 19 en verder) `=H19*G19` door:
+Dit vervangt twee eerdere wijzigingen:
 
-```
-=H19*G19/IFS(I19="Monthly",1,I19="Quarterly",3)
-```
+- De per-rij lease liability-formules (voorheen wijziging E) — de correctie voor
+  betalingsfrequentie zit nu in kolom 12 van de spill.
+- Een waarschuwingsformule die de periode-mismatch zou signaleren — overbodig nu
+  de tabel per definitie klopt.
 
-Het script zet deze formule vanaf nu zelf bij elke nieuw gedetecteerde building.
+Gevolg voor de automatisering: het roll-forward script schrijft deze tabel niet
+meer.
 
 ## Power Automate flow
 
@@ -459,7 +466,6 @@ Zonder dat faalt de flow stil en staat er een half bijgewerkt board pack in de m
 - Kolom G vastleggen **voor** het inladen (dat is de vorige maand) en na de
   refresh wegschrijven naar kolom O.
 - De plug-kolom één maand opschuiven (L → M).
-- Nieuwe buildings detecteren en voorinvullen in "BUILDINGS - NEW".
 - Reviewrapport teruggeven.
 
 ### Wat manueel blijft
@@ -467,7 +473,7 @@ Zonder dat faalt de flow stil en staat er een half bijgewerkt board pack in de m
 - **De plug in kolom L** — het reconciliatieverschil tussen de 2.10- en 2.9-cut.
   Het script bewaart de vorige waarde in kolom M, laat L staan, en meldt per
   PowerHouse hoeveel plug er nog nodig is om te sluiten.
-- **Beoordeling van de nieuwe contracten** in "BUILDINGS - NEW".
+- **Beoordeling van de nieuwe contracten** die in "BUILDINGS - NEW" verschijnen.
 - **De Entity List-refresh.** De connectie is een live MSOLAP-verbinding
   (`Provider=MSOLAP.8; Data Source=pbiazure://api.powerbi.com;
   Integrated Security=ClaimsToken`), geen Power Query. Die vraagt een

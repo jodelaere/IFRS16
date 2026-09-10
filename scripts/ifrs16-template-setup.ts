@@ -1,9 +1,9 @@
 /**
  * IFRS16 Template Setup — one-time Office Script
  *
- * Applies template changes B–E from docs/automation-design.md to the Input
- * Board Pack, and creates the named cell for change A. Run once on the P8 2026
- * workbook; it then travels forward with every monthly copy.
+ * Applies template changes B, C, D, F and H from docs/automation-design.md to
+ * the Input Board Pack, and creates the named cell for change A. Run once on
+ * the P8 2026 workbook; it then travels forward with every monthly copy.
  *
  * Change A's M-code edit CANNOT be scripted — Office Scripts has no access to
  * Power Query M. Do that by hand afterwards; the script prints the reminder.
@@ -13,7 +13,8 @@
  * restructure how values are derived, not what they are. Checked in advance:
  * change B adds entity codes 1652 and 2006, neither of which has any contract,
  * and no existing code changes PowerHouse; change C matches column P on all 24
- * rows; change E reproduces the hardcoded =H19*12. So any reported difference
+ * rows; change H reproduces the six August contracts and the same
+ * EUR 347,848.87 total. So any reported difference
  * means something is off — undo (Ctrl+Z works on script edits) and investigate
  * before saving.
  *
@@ -46,20 +47,18 @@ const TRANSFER_OUT_RANGE = '$B$68:$B$77'
 const DETAILS_FIRST_PH_ROW = 3
 const DETAILS_PH_COUNT = 12
 const DETAILS_NEW_FIRST_ROW = 19
-const DETAILS_NEW_LAST_ROW = 24
 
 function main(workbook: ExcelScript.Workbook): string {
   const log: string[] = ['IFRS16 template setup']
 
-  const before = captureCheckFigures(workbook)
+  const before = captureCheckFigures(workbook, 'L25')
 
   log.push(applyReportingPeriodCell(workbook))
   log.push(applyEntityListLink(workbook))
   log.push(applyDetailsCountLink(workbook))
   log.push(applyTransfersLookup(workbook))
-  log.push(applyLeaseLiabilityFormula(workbook))
   log.push(applyPeriodLabels(workbook))
-  log.push(applyNewLeasePeriodGuard(workbook))
+  log.push(applyNewBuildingsSpill(workbook))
 
   workbook.getApplication().calculate(ExcelScript.CalculationType.fullRebuild)
 
@@ -74,8 +73,12 @@ function main(workbook: ExcelScript.Workbook): string {
   return log.join('\n')
 }
 
-/** Figures that must not move: the CHECK row, both group totals, and the new-lease total. */
-function captureCheckFigures(workbook: ExcelScript.Workbook): number[] {
+/**
+ * Figures that must not move: the CHECK row, both group totals, and the
+ * new-lease total. That total is read where it lives at the time — L25 before
+ * change H moves it, L17 after — so the comparison stays like-for-like.
+ */
+function captureCheckFigures(workbook: ExcelScript.Workbook, liabilityCell: string): number[] {
   const movement = workbook.getWorksheet(SETUP_SHEET_MOVEMENT)
   const details = workbook.getWorksheet(SETUP_SHEET_DETAILS)
   return [
@@ -87,7 +90,7 @@ function captureCheckFigures(workbook: ExcelScript.Workbook): number[] {
     Number(movement.getRange('F31').getValue()),
     Number(details.getRange('B15').getValue()),
     Number(details.getRange('E15').getValue()),
-    Number(details.getRange('L25').getValue()),
+    Number(details.getRange(liabilityCell).getValue()),
   ]
 }
 
@@ -97,9 +100,9 @@ function compareCheckFigures(workbook: ExcelScript.Workbook, before: number[]): 
     'Total buildings (G15)', 'Total vehicles (G31)',
     'Transfers buildings (F15)', 'Transfers vehicles (F31)',
     'Mvt buildings (B15)', 'Mvt vehicles (E15)',
-    'New lease liability (L25)',
+    'New lease liability total',
   ]
-  const after = captureCheckFigures(workbook)
+  const after = captureCheckFigures(workbook, 'L17')
   const moved: string[] = []
   after.forEach((value, index) => {
     if (Math.abs(value - before[index]) > 0.005) {
@@ -229,38 +232,35 @@ function applyPeriodLabels(workbook: ExcelScript.Workbook): string {
 }
 
 /**
- * Change G: flag when the BUILDINGS - NEW list belongs to another period.
+ * Change H: derive BUILDINGS - NEW from the Anaplan data instead of writing it.
  *
- * That table is the one part of the sheet that is written rather than derived —
- * by hand today, by the roll-forward script later. So unlike everything else it
- * does not follow ReportingPeriodEnd, and changing the parameter leaves a
- * contract list from a different month sitting under figures for the new one.
- * This puts that mismatch on screen instead of leaving it to be noticed.
+ * This was the last part of the workbook that did not follow the reporting
+ * parameter — set the period to July and the August contracts stayed put under
+ * July figures. One spill formula fixes that permanently, and supersedes the
+ * old per-row lease liability formulas (the liability is now column 12 of the
+ * spill) and the mismatch warning that would otherwise have guarded it.
+ *
+ * Source is Table1 (2.10 Input), not 2_10 Output: the query drops Fixed
+ * payment, Lease duration, Leased capacity and Payment frequency, which this
+ * table needs. Column numbers below are positions in Table1.
+ *
+ * The total moves to L17, above the header. A spill grows and shrinks, so
+ * anything directly beneath it would block it with #SPILL!.
  */
-function applyNewLeasePeriodGuard(workbook: ExcelScript.Workbook): string {
+function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
   const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
-  sheet.getRange('A17').setFormula(
-    `=LET(d,FILTER(D${DETAILS_NEW_FIRST_ROW}:D60,D${DETAILS_NEW_FIRST_ROW}:D60<>"",""),` +
-    'IF(COUNT(d)=0,"",' +
-    `IF(SUM(--(TEXT(d,"yyyymm")<>TEXT(${SETUP_PERIOD_NAME},"yyyymm")))>0,` +
-    `"CHECK: listed leases are not all from "&TEXT(${SETUP_PERIOD_NAME},"[$-en-US]mmmm yyyy"),"")))`
-  )
-  return 'G: A17 flags a BUILDINGS - NEW list whose commencement dates fall outside the reporting period.'
-}
 
-/**
- * Change E: generalise the lease liability so any duration and frequency works.
- * The workbook has =H19*12 hardcoded for the one quarterly contract; this gives
- * the same figure but keeps holding next month. IFS has no fallback branch on
- * purpose — an unknown frequency yields #N/A rather than a wrong number.
- */
-function applyLeaseLiabilityFormula(workbook: ExcelScript.Workbook): string {
-  const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
-  for (let row = DETAILS_NEW_FIRST_ROW; row <= DETAILS_NEW_LAST_ROW; row++) {
-    if (!sheet.getRange(`A${row}`).getValue()) continue
-    sheet.getRange(`L${row}`).setFormula(
-      `=H${row}*G${row}/IFS(I${row}="Monthly",1,I${row}="Quarterly",3)`
-    )
-  }
-  return `E: lease liability rows ${DETAILS_NEW_FIRST_ROW}-${DETAILS_NEW_LAST_ROW} now divide the duration by the payment frequency.`
+  // The old static rows and total must go first, or the spill has nowhere to land.
+  sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, 60, 12).clear(ExcelScript.ClearApplyTo.contents)
+
+  sheet.getRange(`A${DETAILS_NEW_FIRST_ROW}`).setFormula(
+    '=LET(t,Table1,' +
+    'pay,INDEX(t,,15),dur,INDEX(t,,14),freq,INDEX(t,,16),' +
+    'liab,pay*dur/IFS(freq="Monthly",1,freq="Quarterly",3),' +
+    `keep,(INDEX(t,,26)="Land and buildings")*(TEXT(INDEX(t,,6),"yyyymm")=TEXT(${SETUP_PERIOD_NAME},"yyyymm")),` +
+    'FILTER(HSTACK(CHOOSECOLS(t,1,2,3,6,10,11,14,15,16,26,27),liab),keep,""))'
+  )
+  sheet.getRange('L17').setFormula(`=SUM(CHOOSECOLS(A${DETAILS_NEW_FIRST_ROW}#,12))`)
+
+  return `H: BUILDINGS - NEW now spills from Table1 for the reporting month; total moved to L17. Supersedes changes E and G.`
 }

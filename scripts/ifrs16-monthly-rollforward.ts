@@ -8,7 +8,10 @@
  *
  * Invoked from Power Automate via "Run script". Power Automate supplies the two
  * Anaplan exports as LeaseRow arrays ("Updated Lease properties (2).xlsx" →
- * 2.9 Input, "(3).xlsx" → 2.10 Input) plus the period parameters.
+ * 2.9 Input, "(3).xlsx" → 2.10 Input) plus the reporting period end date.
+ *
+ * It deliberately does not touch BUILDINGS - NEW or any period label: since
+ * template changes F and H those derive from ReportingPeriodEnd themselves.
  *
  * REQUIRES the one-time template changes in docs/automation-design.md — most
  * importantly the Power Query reporting-period parameter. Without it the queries
@@ -73,7 +76,6 @@ interface RollForwardParams {
 
 // --- Verified sheet, table and cell references (P8 2026 workbook) -----------
 
-const SHEET_MVT_DETAILS = 'Mvt Schedule Details'
 const SHEET_MOVEMENT = 'Movement schedule'
 const SHEET_ENTITY_LIST_PBI = 'Entity List PowerBI'
 
@@ -128,7 +130,6 @@ function main(
 
   writePreviousMonthCounts(workbook, previousMonthCounts)
   shiftPlugColumn(workbook)
-  appendNewBuildings(workbook, anaplan210Rows, params)
 
   refreshQueriesAndPivots(workbook)
 
@@ -257,69 +258,6 @@ function shiftPlugColumn(workbook: ExcelScript.Workbook) {
   for (const firstRow of [BUILDINGS_FIRST_ROW, VEHICLES_FIRST_ROW]) {
     const plugs = sheet.getRange(`L${firstRow}:L${firstRow + POWERHOUSE_COUNT - 1}`).getValues()
     sheet.getRange(`M${firstRow}:M${firstRow + POWERHOUSE_COUNT - 1}`).setValues(plugs)
-  }
-}
-
-/**
- * Appends the buildings that commenced in the reporting month to the
- * "BUILDINGS - NEW" table on Mvt Schedule Details (starting row 19).
- *
- * There is deliberately no vehicles equivalent — the workbook lists new
- * buildings in detail only; vehicles are counted, not itemised.
- *
- * Column layout (verified): A key | B entity | C description | D commencement |
- * E end date selection | F end date | G duration | H fixed payment |
- * I frequency | J asset category | K leased capacity | L lease liability.
- *
- * L = payment × number of payments, so the duration in months is divided by the
- * months per payment period. The workbook's own =H*G only holds for Monthly; a
- * Quarterly contract was overstated threefold. IFS deliberately has no fallback
- * branch: an unexpected frequency yields #N/A rather than a silently wrong
- * figure. Only Monthly and Quarterly occur in the Anaplan data today.
- */
-const PAYMENTS_PER_PERIOD_FORMULA = 'IFS({col}="Monthly",1,{col}="Quarterly",3)'
-function appendNewBuildings(workbook: ExcelScript.Workbook, currentExport: LeaseRow[], params: RollForwardParams) {
-  const sheet = workbook.getWorksheet(SHEET_MVT_DETAILS)
-  if (!sheet) throw new Error(`Sheet "${SHEET_MVT_DETAILS}" not found.`)
-
-  const periodEnd = new Date(params.periodEndDate)
-  const periodStart = new Date(Date.UTC(periodEnd.getUTCFullYear(), periodEnd.getUTCMonth(), 1))
-
-  const newBuildings = currentExport.filter((row) => {
-    if (row.AssetCategory !== 'Land and buildings') return false
-    const commencement = new Date(row.LeaseCommencementDate)
-    return commencement >= periodStart && commencement <= periodEnd
-  })
-
-  const headerRow = 18
-  const firstDataRow = headerRow + 1
-
-  // Clear the previous month's rows plus the total line below them.
-  const previousBlock = sheet.getRangeByIndexes(firstDataRow - 1, 0, 200, 12)
-  previousBlock.clear(ExcelScript.ClearApplyTo.contents)
-
-  newBuildings.forEach((row, index) => {
-    const rowNumber = firstDataRow + index
-    sheet.getRangeByIndexes(rowNumber - 1, 0, 1, 11).setValues([[
-      row.Key,
-      row.Entity,
-      row.LeaseDescription,
-      row.LeaseCommencementDate,
-      row.ReasonablyCertainEndDateSelection,
-      row.ReasonablyCertainEndDate,
-      row.LeaseDuration,
-      row.FixedPayment,
-      row.PaymentFrequency,
-      row.AssetCategory,
-      row.LeasedCapacity,
-    ]])
-    const divisor = PAYMENTS_PER_PERIOD_FORMULA.replace(/\{col\}/g, `I${rowNumber}`)
-    sheet.getRange(`L${rowNumber}`).setFormula(`=H${rowNumber}*G${rowNumber}/${divisor}`)
-  })
-
-  if (newBuildings.length > 0) {
-    const totalRow = firstDataRow + newBuildings.length
-    sheet.getRange(`L${totalRow}`).setFormula(`=SUM(L${firstDataRow}:L${totalRow - 1})`)
   }
 }
 
