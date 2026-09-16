@@ -117,6 +117,239 @@ const PRIOR_MONTH_SEED: { [block: string]: { [column: string]: number[] } } = {
   },
 }
 
+/**
+ * Change M: the snapshot sheet behind the terminated/reinstated pair.
+ *
+ * A2 holds a live list of the contracts that count as terminated right now —
+ * the same rule the Terminated pivot uses. D and E hold that same list as it
+ * stood LAST month, as typed values, photographed before the new export goes
+ * in. Everything else is the difference between the two.
+ *
+ * The rule was validated against both real exports: 187 at 31 July, matching
+ * what the July pack reported, and 193 at 31 August, matching the pivot.
+ */
+const SNAPSHOT_SHEET = 'Snapshot'
+const SNAPSHOT_ROW_COUNT = 800
+
+/** BUILDINGS - REINSTATED, past the terminated block. */
+const DETAILS_BACK_FIRST_COLUMN_INDEX = 27 // AB
+const DETAILS_BACK_HEADERS = [
+  'BUILDINGS - REINSTATED',
+  'Reasonably certain end date last month',
+  'Entity',
+  'Lease description',
+  'Reasonably certain end date now',
+]
+
+/**
+ * P7 2026 terminated set — the 187 Land and buildings contracts that counted as
+ * terminated at 31 July: end date in 2026 up to and including July, no
+ * transfer-out date.
+ *
+ * Extracted from the real July Anaplan export (Exports_Juli2026.xlsx, sheet
+ * 2.10). Not from July2026_2.10.xlsx in the P8 Anaplan Exports folder — that
+ * one was pulled during the August close and reports 170, seventeen short of
+ * the 187 the July pack actually reported.
+ *
+ * This seeds the snapshot once. August is the first close that compares against
+ * a previous month, and nothing photographed July at the time. From P9 onwards
+ * the monthly step writes it and this table is never read again.
+ *
+ * Verified: against the August export this reproduces 17 reinstated and 23
+ * newly terminated contracts, which reconciles to Movement schedule column S on
+ * all twelve PowerHouses, and matches the hand analysis contract for contract
+ * (ABY 1611__5 and 1611__6, three SOLCOM, twelve TimePartner).
+ */
+const PRIOR_TERMINATED_SEED: string[][] = [
+  ['1101__BUILDING2', '2026-06-30'],
+  ['1201__P226.001', '2026-03-01'],
+  ['1202__P105.001', '2026-01-31'],
+  ['1202__P152.001', '2026-01-01'],
+  ['1202__P173.001', '2026-02-28'],
+  ['1202__P185.001', '2026-02-28'],
+  ['1202__P204.001', '2026-01-01'],
+  ['1202__P241.001', '2026-04-30'],
+  ['1202__P244.001', '2026-06-30'],
+  ['1202__P255.001.2', '2026-05-20'],
+  ['1202__P280.001', '2026-01-01'],
+  ['1202__P307.001', '2026-01-31'],
+  ['1202__P341.001', '2026-04-30'],
+  ['1202__P360.001', '2026-01-31'],
+  ['1402__CONB013', '2026-02-28'],
+  ['1501__B047_313', '2026-02-28'],
+  ['1501__B049_313', '2026-05-31'],
+  ['1501__CO_COVB054_313', '2026-01-01'],
+  ['1501__CO_COVB055_313', '2026-03-31'],
+  ['1501__CO_COVHOUSING_774', '2026-01-14'],
+  ['1501__CO_COVHOUSING_775', '2026-01-31'],
+  ['1501__CO_COVHOUSING_776', '2026-02-08'],
+  ['1501__CO_COVHOUSING_777', '2026-02-14'],
+  ['1501__CO_COVHOUSING_783', '2026-03-31'],
+  ['1501__CO_COVHOUSING_784', '2026-03-31'],
+  ['1501__CO_COVHOUSING_785', '2026-05-14'],
+  ['1501__CO_COVHOUSING_790', '2026-05-31'],
+  ['1501__CO_COVHOUSING_800', '2026-06-30'],
+  ['1501__CO_COVHOUSING_801', '2026-06-30'],
+  ['1501__CO_COVHOUSING_820', '2026-03-16'],
+  ['1501__CO_COVHOUSING_823', '2026-01-31'],
+  ['1501__CO_COVHOUSING_825', '2026-06-30'],
+  ['1501__HOUSING_001', '2026-03-31'],
+  ['1501__HOUSING_588', '2026-05-01'],
+  ['1501__HOUSING_707', '2026-02-28'],
+  ['1501__HOUSING_708', '2026-03-31'],
+  ['1501__HOUSING_709', '2026-02-28'],
+  ['1501__HOUSING_710', '2026-03-31'],
+  ['1501__HOUSING_711', '2026-03-31'],
+  ['1501__HOUSING_745', '2026-04-30'],
+  ['1501__HOUSING_746', '2026-06-30'],
+  ['1501__HOUSING_751', '2026-06-30'],
+  ['1501__HOUSING_830', '2026-01-31'],
+  ['1501__HOUSING_836', '2026-03-31'],
+  ['1501__HOUSING_843', '2026-03-16'],
+  ['1501__HOUSING_847', '2026-02-28'],
+  ['1501__HOUSING_848', '2026-01-31'],
+  ['1501__HOUSING_849', '2026-01-31'],
+  ['1501__HOUSING_851', '2026-03-02'],
+  ['1501__HOUSING_858', '2026-05-31'],
+  ['1501__HOUSING_860', '2026-03-31'],
+  ['1501__HOUSING_861', '2026-01-26'],
+  ['1501__HOUSING_876', '2026-06-30'],
+  ['1501__HOUSING_888', '2026-05-31'],
+  ['1501__HOUSING_912', '2026-07-10'],
+  ['1501__HOUSING_913', '2026-07-10'],
+  ['1501__HOUSING_914', '2026-07-10'],
+  ['1501__HOUSING_915', '2026-07-10'],
+  ['1501__HOUSING_917', '2026-07-10'],
+  ['1501__HOUSING_918', '2026-07-10'],
+  ['1552__PRO_NL_BRAN0002', '2026-03-31'],
+  ['1552__PRO_NL_BRAN0003', '2026-01-31'],
+  ['1552__PRO_NL_BRAN0018', '2026-03-31'],
+  ['1602__3', '2026-03-31'],
+  ['1610__11', '2026-02-01'],
+  ['1611__5', '2026-07-31'],
+  ['1611__6', '2026-07-31'],
+  ['1704__TP206', '2026-05-31'],
+  ['1704__TP207', '2026-01-31'],
+  ['1704__TP216.2', '2026-03-31'],
+  ['1704__TP220', '2026-04-30'],
+  ['1704__TP221', '2026-04-30'],
+  ['1704__TP222', '2026-01-31'],
+  ['1704__TP240', '2026-07-31'],
+  ['1704__TP241', '2026-07-31'],
+  ['1704__TP243', '2026-07-31'],
+  ['1704__TP254', '2026-07-31'],
+  ['1704__TP255', '2026-05-31'],
+  ['1704__TP256', '2026-07-31'],
+  ['1704__TP264', '2026-04-30'],
+  ['1704__TP266', '2026-07-31'],
+  ['1704__TP267', '2026-07-31'],
+  ['1704__TP268', '2026-04-30'],
+  ['1704__TP269', '2026-04-14'],
+  ['1704__TP282', '2026-03-31'],
+  ['1704__TP284', '2026-04-30'],
+  ['1704__TP288', '2026-05-31'],
+  ['1704__TP289', '2026-05-31'],
+  ['1704__TP290', '2026-06-30'],
+  ['1704__TP295', '2026-07-31'],
+  ['1704__TP298', '2026-05-31'],
+  ['1704__TP300', '2026-05-31'],
+  ['1704__TP309', '2026-06-30'],
+  ['1704__TP317', '2026-07-31'],
+  ['1704__TP325', '2026-06-30'],
+  ['1704__TP531', '2026-07-31'],
+  ['1704__TP537', '2026-07-31'],
+  ['1704__TP544', '2026-07-31'],
+  ['1704__TP551', '2026-06-30'],
+  ['1704__TP553', '2026-06-30'],
+  ['1704__TP554', '2026-06-30'],
+  ['1704__TP556', '2026-06-30'],
+  ['1704__TP583', '2026-01-31'],
+  ['1704__TP584', '2026-01-31'],
+  ['1704__TP585', '2026-03-31'],
+  ['1704__TP586', '2026-01-31'],
+  ['1704__TP587', '2026-01-31'],
+  ['1704__TP588', '2026-01-31'],
+  ['1704__TP589', '2026-05-31'],
+  ['1704__TP619', '2026-06-14'],
+  ['1704__TP648', '2026-07-15'],
+  ['1704__ZQZAQ-2005', '2026-06-30'],
+  ['1710__TP105', '2026-05-31'],
+  ['1710__TP106', '2026-07-31'],
+  ['1710__TP118', '2026-06-30'],
+  ['1710__TP181', '2026-02-28'],
+  ['1710__TP187', '2026-04-30'],
+  ['1710__TP199', '2026-07-31'],
+  ['1710__TP211', '2026-06-30'],
+  ['1710__TP25', '2026-07-31'],
+  ['1710__TP29', '2026-01-31'],
+  ['1710__TP304', '2026-02-28'],
+  ['1710__TP306', '2026-07-31'],
+  ['1710__TP310', '2026-02-28'],
+  ['1710__TP323', '2026-07-31'],
+  ['1710__TP35', '2026-03-31'],
+  ['1710__TP359', '2026-02-28'],
+  ['1710__TP366', '2026-06-30'],
+  ['1710__TP367', '2026-06-30'],
+  ['1710__TP374', '2026-03-31'],
+  ['1710__TP388', '2026-07-31'],
+  ['1710__TP389', '2026-07-31'],
+  ['1710__TP393', '2026-07-31'],
+  ['1710__TP423', '2026-04-30'],
+  ['1710__TP424', '2026-04-30'],
+  ['1710__TP432', '2026-06-30'],
+  ['1710__TP433', '2026-06-30'],
+  ['1710__TP434', '2026-02-28'],
+  ['1710__TP465', '2026-02-28'],
+  ['1710__TP467', '2026-02-28'],
+  ['1710__TP488', '2026-01-31'],
+  ['1710__TP489', '2026-06-23'],
+  ['1710__TP5', '2026-07-31'],
+  ['1710__TP545', '2026-06-23'],
+  ['1710__TP557', '2026-07-31'],
+  ['1710__TP561', '2026-06-30'],
+  ['1710__TP570', '2026-03-31'],
+  ['1710__TP641', '2026-06-30'],
+  ['1710__TP644', '2026-04-30'],
+  ['1710__TP65', '2026-05-31'],
+  ['1710__TP71', '2026-06-30'],
+  ['1710__ZQBZ-256.2', '2026-06-23'],
+  ['1710__ZQZAQ-2009', '2026-02-28'],
+  ['1710__ZQZAQ-2012', '2026-02-28'],
+  ['1824__TRAB008', '2026-05-31'],
+  ['1903__UtrechtII', '2026-03-31'],
+  ['1903__UtrechtIIICohedron', '2026-03-31'],
+  ['1905__Dellaertlaan-Beverwijk', '2026-01-01'],
+  ['1914__Utrecht', '2026-03-31'],
+  ['1920__ZaandamII', '2026-03-31'],
+  ['1921__Houten_Old_1/3/2025', '2026-03-31'],
+  ['1922__Arnhem', '2026-03-31'],
+  ['1929__Sittard WnH laan 19 BIB Zuid', '2026-03-31'],
+  ['1930__Emmen 2A17', '2026-03-31'],
+  ['1933__Meerkollaan-Eindhoven', '2026-03-31'],
+  ['1933__Sittard WnH laan 19 Reeling', '2026-03-31'],
+  ['1936__Eindhoven-Bogert', '2026-03-31'],
+  ['1938__Utrecht', '2026-03-31'],
+  ['1956__Amsterdamsestraatweg-Baarn', '2026-03-31'],
+  ['2003__HAM-Buro2', '2026-07-31'],
+  ['2003__HAM-Stellplatz2', '2026-07-31'],
+  ['2003__HAM-Stellplatz3', '2026-07-31'],
+  ['2003__HAM-Stellplatz4', '2026-07-31'],
+  ['2003__HAM-Stellplatz5', '2026-07-31'],
+  ['2003__HAM-Stellplatze', '2026-07-31'],
+  ['2202__LC-Neuss', '2026-07-31'],
+  ['2205__3A37-7D2F', '2026-02-28'],
+  ['2205__7699-8E60_1', '2026-02-28'],
+  ['2205__7D43-31CD', '2026-01-31'],
+  ['2205__ABE6-476A', '2026-01-31'],
+  ['2205__F55C-D902', '2026-03-31'],
+  ['2210__5E31-F9F1_077', '2026-06-30'],
+  ['2221__AVBZ-1', '2026-03-31'],
+  ['2221__AVBZ-108', '2026-01-31'],
+  ['2221__AVBZ-25', '2026-03-31'],
+  ['2221__AVBZ-37', '2026-04-30'],
+  ['2221__BZ-98', '2026-05-31'],
+]
+
 /** Change J columns on Mvt Schedule Details: buildings G/H, vehicles J/K. */
 /**
  * Change L: BUILDINGS - TERMINATED, beside the NEW table rather than below it.
@@ -162,7 +395,9 @@ function main(workbook: ExcelScript.Workbook): string {
   log.push(applyNewBuildingsSpill(workbook))
   log.push(applyMovementSplit(workbook))
   log.push(applyDetailsSplit(workbook))
+  log.push(applySnapshotSheet(workbook))
   log.push(applyTerminatedBuildings(workbook))
+  log.push(applyReinstatedBuildings(workbook))
 
   workbook.getApplication().calculate(ExcelScript.CalculationType.fullRebuild)
 
@@ -688,14 +923,9 @@ function styleSpillBlock(
 /**
  * Change L: list the contracts that ended this month, beside the new ones.
  *
- * Definition, and it matters: Land and buildings whose reasonably certain end
- * date falls in the reporting month AND that carry no transfer-out date. That
- * last condition is not decoration — the Terminated pivot behind Movement
- * schedule column E excludes transferred-out contracts, so without it this list
- * would not reconcile to the figure it sits next to.
- *
- * Columns are positions in Table1: 11 is the end date, 13 the transfer-out
- * date.
+ * Definition: in this month's terminated set and not in last month's. Verified
+ * against both real Anaplan exports — it gives 23 contracts for P8, which with
+ * the 17 reinstated reconciles to column S on all twelve PowerHouses.
  */
 function applyTerminatedBuildings(workbook: ExcelScript.Workbook): string {
   const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
@@ -725,9 +955,14 @@ function applyTerminatedBuildings(workbook: ExcelScript.Workbook): string {
     sheet.getRangeByIndexes(headerRow - 1, DETAILS_OUT_FIRST_COLUMN_INDEX + index, 1, 1).setValue(header)
   })
 
+  // Newly terminated THIS month, which is not the same as "ends this month".
+  // A contract entered late with a July end date counts this month too, and one
+  // that already counted last month does not count again. Set difference
+  // against the snapshot, so this reconciles to Movement schedule column S.
+  const priorKeys = `${SNAPSHOT_SHEET}!$D$2:$D$${SNAPSHOT_ROW_COUNT + 1}`
   sheet.getRange(`${firstColumn}${DETAILS_NEW_FIRST_ROW}`).setFormula(
     '=LET(t,Table1,' +
-    `keep,(INDEX(t,,26)="Land and buildings")*(TEXT(INDEX(t,,11),"yyyymm")=TEXT(${SETUP_PERIOD_NAME},"yyyymm"))*(INDEX(t,,13)=""),` +
+    `keep,${TERMINATED_CONDITION}*ISNA(XMATCH(INDEX(t,,1),${priorKeys})),` +
     'FILTER(CHOOSECOLS(t,1,2,3,6,10,11,14,15,16,26,27),keep,""))'
   )
 
@@ -755,7 +990,156 @@ function applyTerminatedBuildings(workbook: ExcelScript.Workbook): string {
   return `L: BUILDINGS - TERMINATED spills beside the new ones from ${firstColumn}${DETAILS_NEW_FIRST_ROW}; ${styled} row(s) styled.`
 }
 
-/** A..Z is enough for this workbook. */
+/** 0 -> A, 27 -> AB. */
 function columnLetter(index: number): string {
-  return 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.charAt(index)
+  let letters = ''
+  let remaining = index
+  while (remaining >= 0) {
+    letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.charAt(remaining % 26) + letters
+    remaining = Math.floor(remaining / 26) - 1
+  }
+  return letters
+}
+
+/**
+ * The condition the Terminated pivot applies, as a formula fragment over
+ * Table1 bound to `t`: Land and buildings, reasonably certain end date in the
+ * reporting year up to and including the reporting month, and no transfer-out
+ * date.
+ *
+ * The transfer-out test is not decoration — the pivot drops transferred-out
+ * contracts, and without it none of these blocks reconcile to the figure they
+ * sit beside. Checked against both real Anaplan exports: 187 at 31 July and
+ * 193 at 31 August, each equal to what the workbook reported.
+ *
+ * A blank end date is excluded by the year test: YEAR of an empty cell is 1900.
+ */
+const TERMINATED_CONDITION =
+  '(INDEX(t,,26)="Land and buildings")' +
+  `*(YEAR(INDEX(t,,11))=YEAR(${SETUP_PERIOD_NAME}))` +
+  `*(MONTH(INDEX(t,,11))<=MONTH(${SETUP_PERIOD_NAME}))` +
+  '*(INDEX(t,,13)="")'
+
+/**
+ * Change M: the snapshot sheet.
+ *
+ * A2 spills this month's terminated set (key and end date). D and E hold last
+ * month's, typed. The monthly step copies A over to D before the new export
+ * goes in, exactly like columns O, U, V and W on Movement schedule.
+ */
+function applySnapshotSheet(workbook: ExcelScript.Workbook): string {
+  let sheet = workbook.getWorksheet(SNAPSHOT_SHEET)
+  if (!sheet) sheet = workbook.addWorksheet(SNAPSHOT_SHEET)
+
+  sheet.getRange('A1').setValue('Key — this month')
+  sheet.getRange('B1').setValue('End date — this month')
+  sheet.getRange('D1').setValue('Key — last month')
+  sheet.getRange('E1').setValue('End date — last month')
+  sheet.getRange('A1:E1').getFormat().getFont().setBold(true)
+  sheet.getRange('A1').setValue('Key — this month')
+
+  sheet.getRange('A2').setFormula(
+    '=LET(t,Table1,' +
+    `keep,${TERMINATED_CONDITION},` +
+    'FILTER(HSTACK(INDEX(t,,1),INDEX(t,,11)),keep,""))'
+  )
+  sheet.getRange('B2:B2000').setNumberFormat('dd/mm/yyyy')
+  sheet.getRange(`E2:E${SNAPSHOT_ROW_COUNT + 1}`).setNumberFormat('dd/mm/yyyy')
+
+  const seeded = seedPriorTerminated(sheet)
+  return `M: ${SNAPSHOT_SHEET} sheet — A holds this month's terminated set, D/E last month's. ${seeded}`
+}
+
+/** Only writes when D2 is still empty, so a later month cannot be overwritten. */
+function seedPriorTerminated(sheet: ExcelScript.Worksheet): string {
+  if (String(sheet.getRange('D2').getValue()) !== '') {
+    return 'Prior snapshot already filled, P7 seed not used.'
+  }
+  const rows = PRIOR_TERMINATED_SEED.map((entry) => {
+    const parts = entry[1].split('-')
+    return [entry[0], new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))]
+  })
+  const keys: string[][] = rows.map((row) => [row[0] as string])
+  sheet.getRangeByIndexes(1, 3, keys.length, 1).setValues(keys)
+  // Dates go in as formulas for the same reason the period cell does: a string
+  // would be parsed under whatever locale the workbook opens in.
+  PRIOR_TERMINATED_SEED.forEach((entry, index) => {
+    const parts = entry[1].split('-')
+    sheet
+      .getRangeByIndexes(index + 1, 4, 1, 1)
+      .setFormula(`=DATE(${Number(parts[0])},${Number(parts[1])},${Number(parts[2])})`)
+  })
+  return `Seeded ${PRIOR_TERMINATED_SEED.length} contracts from the P7 export.`
+}
+
+/**
+ * Change N: the contracts that were terminated last month and are not any more.
+ *
+ * This is the half that cannot come from one export. A contract whose end date
+ * moved out to 2029 looks like any other live contract in this month's data —
+ * there is no flag on it. The only way to see it is to have kept last month's
+ * list, which is what the snapshot sheet is for.
+ *
+ * Five columns: the key, the end date it had last month, entity and description
+ * for readability, and the end date it has now.
+ */
+function applyReinstatedBuildings(workbook: ExcelScript.Workbook): string {
+  const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
+  const first = columnLetter(DETAILS_BACK_FIRST_COLUMN_INDEX)
+  const headerRow = DETAILS_NEW_FIRST_ROW - 1
+  const width = DETAILS_BACK_HEADERS.length
+
+  sheet
+    .getRangeByIndexes(
+      DETAILS_NEW_FIRST_ROW - 1,
+      DETAILS_BACK_FIRST_COLUMN_INDEX,
+      DETAILS_SPILL_LAST_ROW - DETAILS_NEW_FIRST_ROW + 1,
+      width
+    )
+    .clear(ExcelScript.ClearApplyTo.contents)
+
+  for (const row of [headerRow, DETAILS_NEW_FIRST_ROW]) {
+    sheet
+      .getRangeByIndexes(row - 1, DETAILS_BACK_FIRST_COLUMN_INDEX, 1, width)
+      .copyFrom(
+        sheet.getRangeByIndexes(row - 1, 0, 1, width),
+        ExcelScript.RangeCopyType.formats
+      )
+  }
+  DETAILS_BACK_HEADERS.forEach((header, index) => {
+    sheet.getRangeByIndexes(headerRow - 1, DETAILS_BACK_FIRST_COLUMN_INDEX + index, 1, 1).setValue(header)
+  })
+
+  const priorKeys = `${SNAPSHOT_SHEET}!$D$2:$D$${SNAPSHOT_ROW_COUNT + 1}`
+  const priorEnds = `${SNAPSHOT_SHEET}!$E$2:$E$${SNAPSHOT_ROW_COUNT + 1}`
+  sheet.getRange(`${first}${DETAILS_NEW_FIRST_ROW}`).setFormula(
+    '=LET(t,Table1,' +
+    `prior,${priorKeys},priorEnd,${priorEnds},` +
+    `cur,FILTER(INDEX(t,,1),${TERMINATED_CONDITION},""),` +
+    'keep,(prior<>"")*ISNA(XMATCH(prior,cur)),' +
+    'FILTER(HSTACK(prior,priorEnd,' +
+    'XLOOKUP(prior,INDEX(t,,1),INDEX(t,,2),""),' +
+    'XLOOKUP(prior,INDEX(t,,1),INDEX(t,,3),""),' +
+    'XLOOKUP(prior,INDEX(t,,1),INDEX(t,,11),"")),keep,""))'
+  )
+
+  const countLabel = sheet.getRangeByIndexes(16, DETAILS_BACK_FIRST_COLUMN_INDEX - 1, 1, 1)
+  countLabel.setValue('Aantal')
+  countLabel.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.right)
+  countLabel.getFormat().getFont().setBold(true)
+  const count = sheet.getRange(`${first}17`)
+  count.setFormula(`=SUM(--(CHOOSECOLS(${first}${DETAILS_NEW_FIRST_ROW}#,1)<>""))`)
+  count.setNumberFormat('#,##0')
+  count.getFormat().getFont().setBold(true)
+
+  for (let index = 0; index < width; index++) {
+    const source = sheet.getRangeByIndexes(headerRow - 1, index, 1, 1).getFormat().getColumnWidth()
+    sheet
+      .getRangeByIndexes(headerRow - 1, DETAILS_BACK_FIRST_COLUMN_INDEX + index, 1, 1)
+      .getFormat()
+      .setColumnWidth(source)
+  }
+
+  const styled = styleSpillBlock(workbook, DETAILS_BACK_FIRST_COLUMN_INDEX, width)
+  return `N: BUILDINGS - REINSTATED spills from ${first}${DETAILS_NEW_FIRST_ROW}; ${styled} row(s) styled.`
 }

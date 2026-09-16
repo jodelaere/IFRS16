@@ -29,6 +29,16 @@ Op tabblad **`Movement schedule`**, alle acht **als waarden**:
 | `E3:E15` / `E19:E31` | `V3:V15` / `V19:V31` | stopgezet vorige maand → kolom S |
 | `F3:F15` / `F19:F31` | `W3:W15` / `W19:W31` | transfers vorige maand → kolom T |
 
+En op tabblad **`Snapshot`**, ook als waarden:
+
+| Kopiëren | Plakken in | Waarvoor |
+|---|---|---|
+| `A2:B801` | `D2:E801` | de beëindigde contracten van vorige maand → BUILDINGS - TERMINATED en - REINSTATED |
+
+Kolom A is een formule over `Table1` en beschrijft dus vorige maand zolang de
+oude export er nog in staat. Na het plakken van de nieuwe export beschrijft hij
+deze maand en is vorige maand onherroepelijk weg.
+
 Kolom C, E, F en G houden nu nog de vorige maand vast. Na de refresh staat daar de
 nieuwe maand en zijn die cijfers weg.
 
@@ -97,7 +107,9 @@ outputtabellen opnieuw opbouwen voordat de pivots er iets aan hebben.
 | `Movement schedule` G1 / G17 | de nieuwe maand |
 | `Mvt Schedule Details` B1 / E1 | `mvt P{nn}` van de nieuwe maand |
 | `Mvt Schedule Details` A19 | de nieuwe contracten van deze maand |
-| `Mvt Schedule Details` P19 | de contracten die deze maand aflopen |
+| `Mvt Schedule Details` P19 | de contracten die deze maand zijn stopgezet |
+| `Mvt Schedule Details` AB19 | de contracten die vorige maand stopgezet waren en nu verlengd |
+| P17 − AB17 | moet gelijk zijn aan `Movement schedule` S15, met omgekeerd teken |
 | `Movement schedule` R + S + T | moet optellen tot kolom P, op elke rij |
 
 Staat er een verschil in kolom J, dan is de plug in kolom L nog niet goed gezet
@@ -142,7 +154,8 @@ Wil je weten wélke contracten er deze maand bijgekomen of afgelopen zijn: dat
 zijn de twee tabellen op `Mvt Schedule Details` — **BUILDINGS - NEW** vanaf A19
 en **BUILDINGS - TERMINATED** vanaf P19, naast elkaar.
 
-Let op: die tweede lijst is *afgelopen in deze maand*, niet *het verschil met
-vorige maand*. Contracten die vorige maand als beëindigd stonden en intussen
-verlengd zijn, staan er niet in — daarvoor zou je de export van vorige maand
-naast die van deze maand moeten leggen. Kolom S vangt het effect wél op.
+Er staan er drie: **BUILDINGS - NEW** vanaf A19, **BUILDINGS - TERMINATED**
+vanaf P19 en **BUILDINGS - REINSTATED** vanaf AB19. Die laatste twee zijn het
+verschil met de lijst van vorige maand, niet met de kalender: een contract dat
+vorige maand als stopgezet stond en nu een einddatum in 2029 heeft, komt in
+REINSTATED. Samen verklaren ze kolom S volledig.

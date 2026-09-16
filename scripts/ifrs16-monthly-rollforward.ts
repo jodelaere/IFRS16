@@ -87,6 +87,13 @@ const DETAILS_COLUMN_COUNT = 14
 /** BUILDINGS - TERMINATED sits beside it at P, eleven columns wide. */
 const DETAILS_OUT_FIRST_COLUMN_INDEX = 15
 const DETAILS_OUT_COLUMN_COUNT = 11
+/** BUILDINGS - REINSTATED at AB, five columns. */
+const DETAILS_BACK_FIRST_COLUMN_INDEX = 27
+const DETAILS_BACK_COLUMN_COUNT = 5
+
+/** The terminated-set snapshot: A holds this month's, D/E last month's. */
+const SNAPSHOT_SHEET = 'Snapshot'
+const SNAPSHOT_ROW_COUNT = 800
 
 /** Anaplan data lands in these Excel Tables; the Power Queries read them by name. */
 const TABLE_29_INPUT = 'Table2.9'
@@ -133,6 +140,11 @@ function main(
   // snapshot columns O, U and V need.
   const previousMonthCounts = capturePreviousMonthCounts(workbook)
 
+  // Before the new export goes in: this month's terminated set is still last
+  // month's, and once Table1 is replaced it is gone. Same reason as columns O,
+  // U, V and W.
+  capturePriorTerminated(workbook)
+
   replaceInputTable(workbook, TABLE_29_INPUT, anaplan29Rows)
   replaceInputTable(workbook, TABLE_210_INPUT, anaplan210Rows)
 
@@ -144,6 +156,7 @@ function main(
   refreshQueriesAndPivots(workbook)
   styleSpillBlock(workbook, 0, DETAILS_COLUMN_COUNT)
   styleSpillBlock(workbook, DETAILS_OUT_FIRST_COLUMN_INDEX, DETAILS_OUT_COLUMN_COUNT)
+  styleSpillBlock(workbook, DETAILS_BACK_FIRST_COLUMN_INDEX, DETAILS_BACK_COLUMN_COUNT)
 
   return buildReviewReport(workbook, params)
 }
@@ -270,6 +283,22 @@ function refreshQueriesAndPivots(workbook: ExcelScript.Workbook) {
   workbook.refreshAllPowerQueries()
   workbook.getPivotTables().forEach((pivotTable) => pivotTable.refresh())
   workbook.getApplication().calculate(ExcelScript.CalculationType.fullRebuild)
+}
+
+/**
+ * Copy the live terminated set into the prior-month columns of the snapshot
+ * sheet, as values.
+ *
+ * Must run before the input tables are replaced: the live list in column A is
+ * computed off Table1, so until the new export lands it still describes last
+ * month. Afterwards it describes this month and last month is unrecoverable.
+ */
+function capturePriorTerminated(workbook: ExcelScript.Workbook) {
+  const sheet = workbook.getWorksheet(SNAPSHOT_SHEET)
+  if (!sheet) throw new Error(`Sheet "${SNAPSHOT_SHEET}" not found — run the template setup script first.`)
+
+  const live = sheet.getRangeByIndexes(1, 0, SNAPSHOT_ROW_COUNT, 2).getValues()
+  sheet.getRangeByIndexes(1, 3, SNAPSHOT_ROW_COUNT, 2).setValues(live)
 }
 
 /**
