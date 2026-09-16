@@ -58,8 +58,34 @@ const DETAILS_NEW_FIRST_ROW = 19
 /** Rows reserved for the spill: cleared, and formatted so it never lands bare. */
 const DETAILS_SPILL_LAST_ROW = 200
 
-/** BUILDINGS - NEW spans A..L. */
-const DETAILS_COLUMN_COUNT = 12
+/** BUILDINGS - NEW spans A..N since change K split the liability. */
+const DETAILS_COLUMN_COUNT = 14
+
+/** Movement schedule: buildings rows 3-14, vehicles 19-30, group total one below. */
+const MOVEMENT_BLOCK_FIRST_ROWS = [3, 19]
+const MOVEMENT_PH_COUNT = 12
+
+/**
+ * Change I columns on Movement schedule.
+ *
+ * U and V are typed snapshots of last month's New and Terminated, written the
+ * same moment as column O. R and S are the deltas derived from them. Lies'
+ * version took the deltas straight from the previous month's workbook over an
+ * external link; that link carries a hard-coded path to one specific month's
+ * file, has to be repointed every close, and breaks the moment a file is
+ * renamed — which is exactly what happened when the WorkingVersion was
+ * promoted. A snapshot needs no second file.
+ */
+const MOVEMENT_NEW_DELTA_COLUMN = 'R'
+const MOVEMENT_OUT_DELTA_COLUMN = 'S'
+const MOVEMENT_NEW_SNAPSHOT_COLUMN = 'U'
+const MOVEMENT_OUT_SNAPSHOT_COLUMN = 'V'
+
+/** Change J columns on Mvt Schedule Details: buildings G/H, vehicles J/K. */
+const DETAILS_SPLIT_COLUMNS = [
+  { newColumn: 'G', outColumn: 'H', movementFirstRow: 3 },
+  { newColumn: 'J', outColumn: 'K', movementFirstRow: 19 },
+]
 
 function main(workbook: ExcelScript.Workbook): string {
   const log: string[] = ['IFRS16 template setup']
@@ -72,6 +98,8 @@ function main(workbook: ExcelScript.Workbook): string {
   log.push(applyTransfersLookup(workbook))
   log.push(applyPeriodLabels(workbook))
   log.push(applyNewBuildingsSpill(workbook))
+  log.push(applyMovementSplit(workbook))
+  log.push(applyDetailsSplit(workbook))
 
   workbook.getApplication().calculate(ExcelScript.CalculationType.fullRebuild)
 
@@ -287,30 +315,156 @@ function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
     .getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, spillRowCount, DETAILS_COLUMN_COUNT)
     .clear(ExcelScript.ClearApplyTo.contents)
 
+  // Change K: the liability also splits into non-current and current.
+  //
+  // Lies added that split by hand per row, and it went wrong twice. The
+  // quarterly ClickCare contract was not divided by its payment frequency, so
+  // it came out at three times the real figure; and from the second row down
+  // the current column held the WHOLE liability while the non-current column
+  // still added a slice on top, double-counting every row. Derived here
+  // instead, from the same duration and frequency the total already uses, so
+  // non-current + current = total by construction.
+  //
+  // IF rather than MIN/MAX: those collapse an array to one value, and these
+  // operands are whole spilled columns.
   sheet.getRange(`A${DETAILS_NEW_FIRST_ROW}`).setFormula(
     '=LET(t,Table1,' +
     'pay,INDEX(t,,15),dur,INDEX(t,,14),freq,INDEX(t,,16),' +
-    'liab,pay*dur/IFS(freq="Monthly",1,freq="Quarterly",3),' +
+    'div,IFS(freq="Monthly",1,freq="Quarterly",3),' +
+    'liab,pay*dur/div,' +
+    'cur,pay*IF(dur>12,12,dur)/div,' +
+    'noncur,pay*IF(dur>12,dur-12,0)/div,' +
     `keep,(INDEX(t,,26)="Land and buildings")*(TEXT(INDEX(t,,6),"yyyymm")=TEXT(${SETUP_PERIOD_NAME},"yyyymm")),` +
-    'FILTER(HSTACK(CHOOSECOLS(t,1,2,3,6,10,11,14,15,16,26,27),liab),keep,""))'
+    'FILTER(HSTACK(CHOOSECOLS(t,1,2,3,6,10,11,14,15,16,26,27),liab,noncur,cur),keep,""))'
   )
 
-  // The total sits above the table: a spill grows and shrinks, so anything
+  // The two new columns inherit the liability column's look — accounting
+  // format, fill, borders — before the styling step tiles row 19 downwards.
+  sheet
+    .getRange(`M${DETAILS_NEW_FIRST_ROW}:N${DETAILS_NEW_FIRST_ROW}`)
+    .copyFrom(sheet.getRange(`L${DETAILS_NEW_FIRST_ROW}`), ExcelScript.RangeCopyType.formats)
+  const headerRow = DETAILS_NEW_FIRST_ROW - 1
+  sheet
+    .getRange(`M${headerRow}:N${headerRow}`)
+    .copyFrom(sheet.getRange(`L${headerRow}`), ExcelScript.RangeCopyType.formats)
+  sheet.getRange(`M${headerRow}`).setValue('Lease Liability Non-Current')
+  sheet.getRange(`N${headerRow}`).setValue('Lease Liability Current')
+
+  // The totals sit above the table: a spill grows and shrinks, so anything
   // directly beneath it would block it with #SPILL!.
   const totalLabel = sheet.getRange('K17')
   totalLabel.setValue('Total')
   totalLabel.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.right)
   totalLabel.getFormat().getFont().setBold(true)
 
-  const total = sheet.getRange('L17')
-  total.setFormula(`=SUM(CHOOSECOLS(A${DETAILS_NEW_FIRST_ROW}#,12))`)
-  total.setNumberFormat('#,##0.00')
-  total.getFormat().getFont().setBold(true)
-  total.getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeTop).setStyle(ExcelScript.BorderLineStyle.continuous)
-  total.getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeBottom).setStyle(ExcelScript.BorderLineStyle.double)
+  // Summing the spill by column index rather than a fixed range is what stops
+  // the off-by-one that left the last contract out of Lies' total.
+  ;[
+    { cell: 'L17', column: 12 },
+    { cell: 'M17', column: 13 },
+    { cell: 'N17', column: 14 },
+  ].forEach((entry) => {
+    const total = sheet.getRange(entry.cell)
+    total.setFormula(`=SUM(CHOOSECOLS(A${DETAILS_NEW_FIRST_ROW}#,${entry.column}))`)
+    total.setNumberFormat('#,##0.00')
+    total.getFormat().getFont().setBold(true)
+    total.getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeTop).setStyle(ExcelScript.BorderLineStyle.continuous)
+    total.getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeBottom).setStyle(ExcelScript.BorderLineStyle.double)
+  })
 
   const styled = styleNewBuildingsSpill(workbook)
-  return `H: BUILDINGS - NEW spills from Table1 for the reporting month; labelled total in K17/L17, ${styled} row(s) styled.`
+  return (
+    'H+K: BUILDINGS - NEW spills from Table1 for the reporting month, liability split into ' +
+    `non-current and current; totals in L17/M17/N17, ${styled} row(s) styled.`
+  )
+}
+
+/**
+ * Change I: split the monthly movement into new versus terminated contracts.
+ *
+ * Column P (=G-O) is the net move and nets the two against each other, so a
+ * PowerHouse that took on four contracts and lost four reads as nil. Lies
+ * separated them on the buildings block by subtracting the previous month's
+ * workbook over an external link. Two problems with that: the link names one
+ * specific month's file, so it has to be repointed every close and dies when a
+ * file is renamed; and it only covered buildings.
+ *
+ * Same device as column O instead. U and V hold last month's New and
+ * Terminated as typed values, written at the same moment as O, and the deltas
+ * derive from them. No second workbook, and it extends to vehicles for free.
+ *
+ * R + S = P is then a free check: the two halves must add back to the net move.
+ */
+function applyMovementSplit(workbook: ExcelScript.Workbook): string {
+  const sheet = workbook.getWorksheet(SETUP_SHEET_MOVEMENT)
+  const priorMonth = `TEXT(EDATE(${SETUP_PERIOD_NAME},-1),"[$-en-US]mmmm yyyy")`
+
+  for (const firstRow of MOVEMENT_BLOCK_FIRST_ROWS) {
+    const headerRow = firstRow - 2
+    sheet.getRange(`${MOVEMENT_NEW_DELTA_COLUMN}${headerRow}`).setValue('New contracts')
+    sheet.getRange(`${MOVEMENT_OUT_DELTA_COLUMN}${headerRow}`).setValue('Terminated contracts')
+    sheet
+      .getRange(`${MOVEMENT_NEW_SNAPSHOT_COLUMN}${headerRow}`)
+      .setFormula(`="New "&${priorMonth}`)
+    sheet
+      .getRange(`${MOVEMENT_OUT_SNAPSHOT_COLUMN}${headerRow}`)
+      .setFormula(`="Terminated "&${priorMonth}`)
+
+    // Through the group total row, so the totals split too.
+    for (let row = firstRow; row <= firstRow + MOVEMENT_PH_COUNT; row++) {
+      sheet
+        .getRange(`${MOVEMENT_NEW_DELTA_COLUMN}${row}`)
+        .setFormula(`=C${row}-${MOVEMENT_NEW_SNAPSHOT_COLUMN}${row}`)
+      sheet
+        .getRange(`${MOVEMENT_OUT_DELTA_COLUMN}${row}`)
+        .setFormula(`=E${row}-${MOVEMENT_OUT_SNAPSHOT_COLUMN}${row}`)
+    }
+  }
+
+  return (
+    `I: Movement schedule ${MOVEMENT_NEW_DELTA_COLUMN}/${MOVEMENT_OUT_DELTA_COLUMN} split the move into new ` +
+    `and terminated, from snapshots in ${MOVEMENT_NEW_SNAPSHOT_COLUMN}/${MOVEMENT_OUT_SNAPSHOT_COLUMN} — ` +
+    'both blocks, no external link.'
+  )
+}
+
+/**
+ * Change J: carry that split onto Mvt Schedule Details, next to the net move.
+ *
+ * Same shape as change C — the count block already reads Movement schedule
+ * column P, so these read R and S from the same rows rather than repeating the
+ * arithmetic.
+ */
+function applyDetailsSplit(workbook: ExcelScript.Workbook): string {
+  const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
+
+  for (const block of DETAILS_SPLIT_COLUMNS) {
+    sheet.getRange(`${block.newColumn}1`).setValue('New contracts')
+    sheet.getRange(`${block.outColumn}1`).setValue('Terminated contracts')
+
+    for (let index = 0; index < DETAILS_PH_COUNT; index++) {
+      const row = DETAILS_FIRST_PH_ROW + index
+      const sourceRow = block.movementFirstRow + index
+      sheet
+        .getRange(`${block.newColumn}${row}`)
+        .setFormula(`='${SETUP_SHEET_MOVEMENT}'!${MOVEMENT_NEW_DELTA_COLUMN}${sourceRow}`)
+      sheet
+        .getRange(`${block.outColumn}${row}`)
+        .setFormula(`='${SETUP_SHEET_MOVEMENT}'!${MOVEMENT_OUT_DELTA_COLUMN}${sourceRow}`)
+    }
+
+    const totalRow = DETAILS_FIRST_PH_ROW + DETAILS_PH_COUNT
+    const firstRow = DETAILS_FIRST_PH_ROW
+    const lastRow = totalRow - 1
+    sheet
+      .getRange(`${block.newColumn}${totalRow}`)
+      .setFormula(`=SUM(${block.newColumn}${firstRow}:${block.newColumn}${lastRow})`)
+    sheet
+      .getRange(`${block.outColumn}${totalRow}`)
+      .setFormula(`=SUM(${block.outColumn}${firstRow}:${block.outColumn}${lastRow})`)
+  }
+
+  return 'J: Mvt Schedule Details now shows new and terminated beside the net move — buildings G/H, vehicles J/K.'
 }
 
 /**

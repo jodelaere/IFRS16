@@ -125,8 +125,9 @@ function main(
   // this parameter, so setting it afterwards would compute the wrong period.
   setReportingPeriod(workbook, params.periodEndDate)
 
-  // Column G still holds the previous month's counts until the new Anaplan data
-  // is loaded, so capture it first — that is exactly what column O needs.
+  // Columns C, E and G still hold the previous month's figures until the new
+  // Anaplan data is loaded, so photograph them first — that is exactly what the
+  // snapshot columns O, U and V need.
   const previousMonthCounts = capturePreviousMonthCounts(workbook)
 
   replaceInputTable(workbook, TABLE_29_INPUT, anaplan29Rows)
@@ -167,29 +168,52 @@ function setReportingPeriod(workbook: ExcelScript.Workbook, periodEndDate: strin
   namedItem.getRange().setFormula(`=DATE(${Number(parts[0])},${Number(parts[1])},${Number(parts[2])})`)
 }
 
-/** Column G for both blocks, including the group total row. */
-function capturePreviousMonthCounts(workbook: ExcelScript.Workbook): (string | number | boolean)[][][] {
+/**
+ * The three columns that have to be photographed before the refresh, and where
+ * each photograph goes.
+ *
+ *   G -> O   total contracts, so column P can show the net month-on-month move
+ *   C -> U   new contracts, and E -> V terminated, so columns R and S can split
+ *            that move into its two halves (template change I)
+ *
+ * All three are typed snapshots for the same reason: after the refresh the
+ * source columns hold the NEW month, and last month's figures are gone. Column
+ * O used to be =SUM(H:L), which resolved to current month plus plug and never
+ * represented the prior month at all.
+ */
+const PRIOR_MONTH_SNAPSHOTS = [
+  { source: 'G', target: 'O' },
+  { source: 'C', target: 'U' },
+  { source: 'E', target: 'V' },
+]
+
+/** Both blocks, including the group total row. */
+function capturePreviousMonthCounts(workbook: ExcelScript.Workbook): (string | number | boolean)[][][][] {
   const sheet = workbook.getWorksheet(SHEET_MOVEMENT)
   if (!sheet) throw new Error(`Sheet "${SHEET_MOVEMENT}" not found.`)
 
-  return [BUILDINGS_FIRST_ROW, VEHICLES_FIRST_ROW].map((firstRow) =>
-    sheet.getRange(`G${firstRow}:G${firstRow + POWERHOUSE_COUNT}`).getValues()
+  return PRIOR_MONTH_SNAPSHOTS.map((snapshot) =>
+    [BUILDINGS_FIRST_ROW, VEHICLES_FIRST_ROW].map((firstRow) =>
+      sheet
+        .getRange(`${snapshot.source}${firstRow}:${snapshot.source}${firstRow + POWERHOUSE_COUNT}`)
+        .getValues()
+    )
   )
 }
 
-/**
- * Writes the captured counts into column O ("prior month"), which is a typed
- * value column — it used to be =SUM(H:L), which resolved to current month plus
- * plug and therefore did not represent the prior month at all. Column P
- * (=G-O) only yields a real month-on-month movement once O holds actual prior
- * month figures.
- */
-function writePreviousMonthCounts(workbook: ExcelScript.Workbook, counts: (string | number | boolean)[][][]) {
+function writePreviousMonthCounts(
+  workbook: ExcelScript.Workbook,
+  counts: (string | number | boolean)[][][][]
+) {
   const sheet = workbook.getWorksheet(SHEET_MOVEMENT)
   if (!sheet) throw new Error(`Sheet "${SHEET_MOVEMENT}" not found.`)
 
-  ;[BUILDINGS_FIRST_ROW, VEHICLES_FIRST_ROW].forEach((firstRow, index) => {
-    sheet.getRange(`O${firstRow}:O${firstRow + POWERHOUSE_COUNT}`).setValues(counts[index])
+  PRIOR_MONTH_SNAPSHOTS.forEach((snapshot, snapshotIndex) => {
+    ;[BUILDINGS_FIRST_ROW, VEHICLES_FIRST_ROW].forEach((firstRow, blockIndex) => {
+      sheet
+        .getRange(`${snapshot.target}${firstRow}:${snapshot.target}${firstRow + POWERHOUSE_COUNT}`)
+        .setValues(counts[snapshotIndex][blockIndex])
+    })
   })
 }
 

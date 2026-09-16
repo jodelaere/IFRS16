@@ -75,6 +75,51 @@ Beide blokken (buildings rij 3-14, vehicles rij 19-30) hebben dezelfde structuur
 | O | Vorige maand | **getypte waarde** (het vorige-maandcijfer) |
 | P | mvt P{nn} | `=G-O` — zie hieronder, dit is **niet** het aantal nieuwe contracten |
 
+### I / J / K. De beweging splitsen in nieuw en stopgezet
+
+Kolom P netteert nieuw tegen stopgezet: een PowerHouse die vier contracten
+bijkreeg en er vier verloor leest als nul. Lies splitste dat op het
+buildings-blok door het vorige-maandbestand af te trekken via een **externe
+link**. Twee bezwaren: die link noemt één specifiek maandbestand, moet elke
+afsluiting opnieuw gericht worden en sterft zodra een bestand hernoemd wordt —
+wat bij de promotie van de WorkingVersion precies gebeurd is. En hij dekte
+alleen buildings.
+
+Daarom hetzelfde middel als kolom O:
+
+| Kolom | Wat |
+|---|---|
+| `U`, `V` | getypte momentopname van vorige maands New en Terminated |
+| `R` | `=C-U` — nieuw deze maand |
+| `S` | `=E-V` — stopgezet deze maand |
+
+Beide blokken, geen tweede werkmap. `R + S = P` is dan een gratis controle.
+
+Wijziging **J** zet dezelfde splitsing op `Mvt Schedule Details` naast de
+nettobeweging: buildings in G/H, vehicles in J/K, gelezen uit R en S zodat de
+rekensom niet twee keer in de werkmap staat.
+
+Wijziging **K** splitst de lease liability in de spill in non-current (kolom 13)
+en current (kolom 14):
+
+```
+div    = IFS(freq="Monthly",1,freq="Quarterly",3)
+cur    = pay * IF(dur>12,12,dur) / div
+noncur = pay * IF(dur>12,dur-12,0) / div
+```
+
+`IF` en niet `MIN`/`MAX`: die laatste storten een array in tot één waarde, en dit
+zijn hele spill-kolommen.
+
+> Lies' handmatige versie ging hier twee keer mis. Het kwartaalcontract van
+> ClickCare werd niet door zijn betalingsfrequentie gedeeld en kwam op drie keer
+> het echte bedrag uit; en vanaf de tweede rij bevatte de current-kolom de
+> **volledige** verplichting terwijl non-current er nog een schijf bovenop
+> telde. Daarnaast liep de totaalrij tot rij 28 terwijl de data tot rij 29 liep,
+> waardoor het laatste contract buiten het totaal viel. Afgeleid uit dezelfde
+> duur en frequentie als het totaal telt non-current + current per definitie
+> terug op, en `SUM(CHOOSECOLS(A19#,...))` kan geen rij missen.
+
 ### Wat kolom P wél en niet is
 
 `P = G - O` is het verschil tussen het totaal van deze maand en het totaal dat

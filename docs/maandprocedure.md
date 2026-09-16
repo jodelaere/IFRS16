@@ -1,7 +1,7 @@
 # IFRS16 Input Board Pack — maandprocedure
 
-Handmatige procedure, zonder Power Automate. Volg de volgorde: stap 3 en 4
-moeten vóór de refresh, anders gaan ze stil fout.
+Handmatige procedure, zonder Power Automate. Volg de volgorde: stap 1 en 3
+gaan stil fout als je ze overslaat of te laat doet.
 
 ## 0. Voorbereiden
 
@@ -18,17 +18,18 @@ Kopieer het **vorige-maandbestand** naar de nieuwe maandmap en hernoem het.
 Haal de twee exports uit de Anaplan IFRS16-module (2.9 en 2.10) en zet ze in de
 submap `Anaplan Exports` van diezelfde maand.
 
-## 1. Kolom O vullen — vóór alles
+## 1. De snapshotkolommen vullen — vóór alles
 
-Op tabblad **`Movement schedule`**:
+Op tabblad **`Movement schedule`**, alle zes **als waarden**:
 
-| Kopiëren | Plakken **als waarden** in |
-|---|---|
-| `G3:G15` (buildings) | `O3:O15` |
-| `G19:G31` (vehicles) | `O19:O31` |
+| Kopiëren | Plakken in | Waarvoor |
+|---|---|---|
+| `G3:G15` / `G19:G31` | `O3:O15` / `O19:O31` | totaal vorige maand → kolom P |
+| `C3:C15` / `C19:C31` | `U3:U15` / `U19:U31` | nieuw vorige maand → kolom R |
+| `E3:E15` / `E19:E31` | `V3:V15` / `V19:V31` | stopgezet vorige maand → kolom S |
 
-Kolom G houdt nu nog de vorige maand vast. Na de refresh staat daar de nieuwe
-maand en zijn die cijfers weg.
+Kolom C, E en G houden nu nog de vorige maand vast. Na de refresh staat daar de
+nieuwe maand en zijn die cijfers weg.
 
 **Plak als waarden** (Ctrl+Shift+V → Waarden). Kolom G bestaat uit XLOOKUP-
 formules; plak je die door, dan volgt O gewoon G en is `P = G-O` altijd nul.
@@ -95,6 +96,7 @@ outputtabellen opnieuw opbouwen voordat de pivots er iets aan hebben.
 | `Movement schedule` G1 / G17 | de nieuwe maand |
 | `Mvt Schedule Details` B1 / E1 | `mvt P{nn}` van de nieuwe maand |
 | `Mvt Schedule Details` A19 | de nieuwe contracten van deze maand |
+| `Movement schedule` R + S | moet optellen tot kolom P, op elke rij |
 
 Staat er een verschil in kolom J, dan is de plug in kolom L nog niet goed gezet
 voor deze snit. Plug hem bij tot J leeg is — maar kijk eerst of het verschil
@@ -130,4 +132,9 @@ Twee dingen die je zelf moet bekijken:
 tegen elkaar weggestreept, plus alle herziening van de vorige maand. Zie
 [automation-design.md](automation-design.md#wat-kolom-p-wél-en-niet-is).
 
-Wil je weten wat er deze maand bijgekomen is: dat is BUILDINGS - NEW.
+Kolom **R** en **S** splitsen hem wel: R is nieuw, S is stopgezet, en samen
+tellen ze terug op tot P. Dezelfde splitsing staat op `Mvt Schedule Details` in
+G/H (buildings) en J/K (vehicles).
+
+Wil je weten wélke contracten er deze maand bijgekomen zijn: dat is
+BUILDINGS - NEW.
