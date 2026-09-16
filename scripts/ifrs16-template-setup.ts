@@ -118,6 +118,32 @@ const PRIOR_MONTH_SEED: { [block: string]: { [column: string]: number[] } } = {
 }
 
 /** Change J columns on Mvt Schedule Details: buildings G/H, vehicles J/K. */
+/**
+ * Change L: BUILDINGS - TERMINATED, beside the NEW table rather than below it.
+ *
+ * Below would have to clear the 182 rows the NEW spill reserves, and the moment
+ * a month produced more contracts than that reservation the two would collide
+ * with #SPILL!. Side by side, neither can ever reach the other.
+ *
+ * Eleven columns, the same eleven the NEW table opens with — a terminated
+ * contract has no lease liability to add.
+ */
+const DETAILS_OUT_FIRST_COLUMN_INDEX = 15 // P
+const DETAILS_OUT_COLUMN_COUNT = 11 // P..Z
+const DETAILS_OUT_HEADERS = [
+  'BUILDINGS - TERMINATED',
+  'Entity',
+  'Lease description',
+  'Lease commencement date',
+  'Reasonably certain end date selection',
+  'Reasonably certain end date',
+  'Lease duration',
+  'Fixed payment',
+  'Payment frequency',
+  'Asset category',
+  'Leased capacity',
+]
+
 const DETAILS_SPLIT_BLOCKS = [
   { columns: ['G', 'H', 'I'], movementFirstRow: 3 },
   { columns: ['J', 'K', 'L'], movementFirstRow: 19 },
@@ -136,6 +162,7 @@ function main(workbook: ExcelScript.Workbook): string {
   log.push(applyNewBuildingsSpill(workbook))
   log.push(applyMovementSplit(workbook))
   log.push(applyDetailsSplit(workbook))
+  log.push(applyTerminatedBuildings(workbook))
 
   workbook.getApplication().calculate(ExcelScript.CalculationType.fullRebuild)
 
@@ -408,7 +435,7 @@ function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
     total.getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeBottom).setStyle(ExcelScript.BorderLineStyle.double)
   })
 
-  const styled = styleNewBuildingsSpill(workbook)
+  const styled = styleSpillBlock(workbook, 0, DETAILS_COLUMN_COUNT)
   return (
     'H+K: BUILDINGS - NEW spills from Table1 for the reporting month, liability split into ' +
     `non-current and current; totals in L17/M17/N17, ${styled} row(s) styled.`
@@ -597,21 +624,26 @@ function applyDetailsSplit(workbook: ExcelScript.Workbook): string {
 }
 
 /**
- * Dress the spill.
+ * Dress a spill block.
  *
  * A spill carries no formatting of its own — it shows whatever the cells
- * already had. Only the six originally populated rows were styled, so a longer
+ * already had. Only the originally populated rows were styled, so a longer
  * month landed as raw serial dates and unrounded amounts. Tiling the formatting
- * across all 182 reserved rows fixes that but leaves column A's blue and column
- * L's yellow running far below the data.
+ * across all 182 reserved rows fixes that but leaves the key column's blue and
+ * the liability column's yellow running far below the data.
  *
  * So tile it over exactly as many rows as the spill actually produced, and
  * strip the formatting off the rest. The monthly script repeats this after its
  * refresh, because the row count changes every month.
  *
- * Row 19 is the template and is never cleared, even when the month is empty.
+ * The first row is the template and is never cleared, even when the month is
+ * empty.
  */
-function styleNewBuildingsSpill(workbook: ExcelScript.Workbook): number {
+function styleSpillBlock(
+  workbook: ExcelScript.Workbook,
+  firstColumnIndex: number,
+  columnCount: number
+): number {
   const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
 
   // The spill was just written or just refreshed; read it after a recalculation
@@ -619,7 +651,9 @@ function styleNewBuildingsSpill(workbook: ExcelScript.Workbook): number {
   workbook.getApplication().calculate(ExcelScript.CalculationType.full)
 
   const reserved = DETAILS_SPILL_LAST_ROW - DETAILS_NEW_FIRST_ROW + 1
-  const keys = sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, reserved, 1).getValues()
+  const keys = sheet
+    .getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, firstColumnIndex, reserved, 1)
+    .getValues()
   let filled = 0
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i][0]
@@ -629,9 +663,9 @@ function styleNewBuildingsSpill(workbook: ExcelScript.Workbook): number {
 
   if (filled > 1) {
     sheet
-      .getRangeByIndexes(DETAILS_NEW_FIRST_ROW, 0, filled - 1, DETAILS_COLUMN_COUNT)
+      .getRangeByIndexes(DETAILS_NEW_FIRST_ROW, firstColumnIndex, filled - 1, columnCount)
       .copyFrom(
-        sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, 1, DETAILS_COLUMN_COUNT),
+        sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, firstColumnIndex, 1, columnCount),
         ExcelScript.RangeCopyType.formats
       )
   }
@@ -641,12 +675,87 @@ function styleNewBuildingsSpill(workbook: ExcelScript.Workbook): number {
     sheet
       .getRangeByIndexes(
         firstBlankRow - 1,
-        0,
+        firstColumnIndex,
         DETAILS_SPILL_LAST_ROW - firstBlankRow + 1,
-        DETAILS_COLUMN_COUNT
+        columnCount
       )
       .clear(ExcelScript.ClearApplyTo.formats)
   }
 
   return filled
+}
+
+/**
+ * Change L: list the contracts that ended this month, beside the new ones.
+ *
+ * Definition, and it matters: Land and buildings whose reasonably certain end
+ * date falls in the reporting month AND that carry no transfer-out date. That
+ * last condition is not decoration — the Terminated pivot behind Movement
+ * schedule column E excludes transferred-out contracts, so without it this list
+ * would not reconcile to the figure it sits next to.
+ *
+ * Columns are positions in Table1: 11 is the end date, 13 the transfer-out
+ * date.
+ */
+function applyTerminatedBuildings(workbook: ExcelScript.Workbook): string {
+  const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
+  const firstColumn = columnLetter(DETAILS_OUT_FIRST_COLUMN_INDEX)
+  const headerRow = DETAILS_NEW_FIRST_ROW - 1
+
+  sheet
+    .getRangeByIndexes(
+      DETAILS_NEW_FIRST_ROW - 1,
+      DETAILS_OUT_FIRST_COLUMN_INDEX,
+      DETAILS_SPILL_LAST_ROW - DETAILS_NEW_FIRST_ROW + 1,
+      DETAILS_OUT_COLUMN_COUNT
+    )
+    .clear(ExcelScript.ClearApplyTo.contents)
+
+  // Borrow the NEW table's header and first data row, column for column, so the
+  // two tables read as one pair rather than as a bolt-on.
+  for (const row of [headerRow, DETAILS_NEW_FIRST_ROW]) {
+    sheet
+      .getRangeByIndexes(row - 1, DETAILS_OUT_FIRST_COLUMN_INDEX, 1, DETAILS_OUT_COLUMN_COUNT)
+      .copyFrom(
+        sheet.getRangeByIndexes(row - 1, 0, 1, DETAILS_OUT_COLUMN_COUNT),
+        ExcelScript.RangeCopyType.formats
+      )
+  }
+  DETAILS_OUT_HEADERS.forEach((header, index) => {
+    sheet.getRangeByIndexes(headerRow - 1, DETAILS_OUT_FIRST_COLUMN_INDEX + index, 1, 1).setValue(header)
+  })
+
+  sheet.getRange(`${firstColumn}${DETAILS_NEW_FIRST_ROW}`).setFormula(
+    '=LET(t,Table1,' +
+    `keep,(INDEX(t,,26)="Land and buildings")*(TEXT(INDEX(t,,11),"yyyymm")=TEXT(${SETUP_PERIOD_NAME},"yyyymm"))*(INDEX(t,,13)=""),` +
+    'FILTER(CHOOSECOLS(t,1,2,3,6,10,11,14,15,16,26,27),keep,""))'
+  )
+
+  // Count above the header, for the same reason the NEW totals sit there: a
+  // spill grows and shrinks and would hit anything placed below it.
+  const countLabel = sheet.getRangeByIndexes(16, DETAILS_OUT_FIRST_COLUMN_INDEX - 1, 1, 1)
+  countLabel.setValue('Aantal')
+  countLabel.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.right)
+  countLabel.getFormat().getFont().setBold(true)
+  const count = sheet.getRange(`${firstColumn}17`)
+  count.setFormula(`=SUM(--(CHOOSECOLS(${firstColumn}${DETAILS_NEW_FIRST_ROW}#,1)<>""))`)
+  count.setNumberFormat('#,##0')
+  count.getFormat().getFont().setBold(true)
+
+  // Match the NEW table's column widths rather than inventing new ones.
+  for (let index = 0; index < DETAILS_OUT_COLUMN_COUNT; index++) {
+    const width = sheet.getRangeByIndexes(headerRow - 1, index, 1, 1).getFormat().getColumnWidth()
+    sheet
+      .getRangeByIndexes(headerRow - 1, DETAILS_OUT_FIRST_COLUMN_INDEX + index, 1, 1)
+      .getFormat()
+      .setColumnWidth(width)
+  }
+
+  const styled = styleSpillBlock(workbook, DETAILS_OUT_FIRST_COLUMN_INDEX, DETAILS_OUT_COLUMN_COUNT)
+  return `L: BUILDINGS - TERMINATED spills beside the new ones from ${firstColumn}${DETAILS_NEW_FIRST_ROW}; ${styled} row(s) styled.`
+}
+
+/** A..Z is enough for this workbook. */
+function columnLetter(index: number): string {
+  return 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.charAt(index)
 }

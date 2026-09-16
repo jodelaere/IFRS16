@@ -127,6 +127,35 @@ zijn hele spill-kolommen.
 > duur en frequentie als het totaal telt non-current + current per definitie
 > terug op, en `SUM(CHOOSECOLS(A19#,...))` kan geen rij missen.
 
+### L. BUILDINGS - TERMINATED
+
+Naast BUILDINGS - NEW, vanaf `P19`, met dezelfde elf kolommen (een beëindigd
+contract heeft geen lease liability). Naast en niet eronder: de NEW-spill
+reserveert 182 rijen, en zodra een maand er meer oplevert zouden de twee
+tabellen op elkaar botsen met `#SPILL!`.
+
+```
+=LET(t,Table1,
+ keep,(INDEX(t,,26)="Land and buildings")
+     *(TEXT(INDEX(t,,11),"yyyymm")=TEXT(ReportingPeriodEnd,"yyyymm"))
+     *(INDEX(t,,13)=""),
+ FILTER(CHOOSECOLS(t,1,2,3,6,10,11,14,15,16,26,27),keep,""))
+```
+
+Die derde voorwaarde — géén transfer-out-datum — is geen detail. De pivot achter
+`Movement schedule` kolom E gooit contracten met een transfer-out eruit, dus
+zonder die voorwaarde zou deze lijst niet aansluiten op het cijfer waar hij
+naast staat.
+
+> **Dit is niet hetzelfde als de lijst in het pre-automatisatiebestand.** Die
+> telt 13 rijen, deze 22 voor P8. Het verschil: de handmatige lijst laat de 18
+> TimePartner/ZAQUENSIS-contracten weg (die zijn apart behandeld in het blokje
+> 24/12/18 onderaan), bevat `1511__B001` dat een transfer-out uit 2025 draagt en
+> dus niet in het Terminated-cijfer zit, en voegt 8 contracten toe die in júli
+> afliepen om de herziening te tonen. Deze tabel beantwoordt de vraag "wat is er
+> deze maand afgelopen"; die andere beantwoordde "waarom beweegt het cijfer".
+> Het tweede deel vraagt de export van vorige maand en blijft handwerk.
+
 ### Wat kolom P wél en niet is
 
 `P = G - O` is het verschil tussen het totaal van deze maand en het totaal dat

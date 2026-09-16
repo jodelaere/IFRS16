@@ -97,6 +97,7 @@ outputtabellen opnieuw opbouwen voordat de pivots er iets aan hebben.
 | `Movement schedule` G1 / G17 | de nieuwe maand |
 | `Mvt Schedule Details` B1 / E1 | `mvt P{nn}` van de nieuwe maand |
 | `Mvt Schedule Details` A19 | de nieuwe contracten van deze maand |
+| `Mvt Schedule Details` P19 | de contracten die deze maand aflopen |
 | `Movement schedule` R + S + T | moet optellen tot kolom P, op elke rij |
 
 Staat er een verschil in kolom J, dan is de plug in kolom L nog niet goed gezet
@@ -137,5 +138,11 @@ Kolom **R**, **S** en **T** splitsen hem wel: nieuw, stopgezet en transfers, en
 samen tellen ze terug op tot P. Dezelfde splitsing staat op
 `Mvt Schedule Details` in G/H/I (buildings) en J/K/L (vehicles).
 
-Wil je weten wélke contracten er deze maand bijgekomen zijn: dat is
-BUILDINGS - NEW.
+Wil je weten wélke contracten er deze maand bijgekomen of afgelopen zijn: dat
+zijn de twee tabellen op `Mvt Schedule Details` — **BUILDINGS - NEW** vanaf A19
+en **BUILDINGS - TERMINATED** vanaf P19, naast elkaar.
+
+Let op: die tweede lijst is *afgelopen in deze maand*, niet *het verschil met
+vorige maand*. Contracten die vorige maand als beëindigd stonden en intussen
+verlengd zijn, staan er niet in — daarvoor zou je de export van vorige maand
+naast die van deze maand moeten leggen. Kolom S vangt het effect wél op.
