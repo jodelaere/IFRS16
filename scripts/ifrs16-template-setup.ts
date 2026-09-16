@@ -77,10 +77,21 @@ const MOVEMENT_PH_COUNT = 12
  * promoted. A snapshot needs no second file.
  */
 const MOVEMENT_SPLIT = [
-  { source: 'C', delta: 'R', snapshot: 'U', label: 'New contracts', seed: 'newContracts' },
-  { source: 'E', delta: 'S', snapshot: 'V', label: 'Terminated contracts', seed: 'terminated' },
-  { source: 'F', delta: 'T', snapshot: 'W', label: 'Transfers', seed: 'transfers' },
+  { source: 'C', delta: 'R', snapshot: 'U', label: 'New contracts', shortLabel: 'New', seed: 'newContracts' },
+  { source: 'E', delta: 'S', snapshot: 'V', label: 'Terminated contracts', shortLabel: 'Ended', seed: 'terminated' },
+  { source: 'F', delta: 'T', snapshot: 'W', label: 'Transfers between PHs', shortLabel: 'Transf', seed: 'transfers' },
 ]
+
+/**
+ * Columns whose formatting the new ones borrow. C is an ordinary derived
+ * column; L is the plug, which like the snapshots is typed by hand each month
+ * and is set in italic to say so.
+ */
+const MOVEMENT_RESULT_TEMPLATE_COLUMN = 'C'
+const MOVEMENT_INPUT_TEMPLATE_COLUMN = 'L'
+const MOVEMENT_SPLIT_COLUMN_WIDTH = 62
+/** The existing count column on Mvt Schedule Details. */
+const DETAILS_RESULT_TEMPLATE_COLUMN = 'B'
 
 /**
  * P7 2026 New and Terminated per PowerHouse, in Movement schedule row order,
@@ -422,18 +433,36 @@ function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
  */
 function applyMovementSplit(workbook: ExcelScript.Workbook): string {
   const sheet = workbook.getWorksheet(SETUP_SHEET_MOVEMENT)
-  const priorMonth = `TEXT(EDATE(${SETUP_PERIOD_NAME},-1),"[$-en-US]mmmm yyyy")`
+  const priorShort = `TEXT(MONTH(EDATE(${SETUP_PERIOD_NAME},-1)),"00")&" "&YEAR(EDATE(${SETUP_PERIOD_NAME},-1))`
 
   for (const firstRow of MOVEMENT_BLOCK_FIRST_ROWS) {
     const headerRow = firstRow - 2
+    const subHeaderRow = firstRow - 1
+    const totalRow = firstRow + MOVEMENT_PH_COUNT
+    const lastPowerHouseRow = totalRow - 1
+
     for (const part of MOVEMENT_SPLIT) {
+      // A derived column looks like every other derived column, and a snapshot
+      // looks like the plug columns it behaves like. Both are copied off cells
+      // that already exist rather than restyled from scratch — the sheet's own
+      // conventions (magenta header, banded total, italic for anything typed by
+      // hand) then hold without having to be restated here.
+      styleLikeColumn(sheet, MOVEMENT_RESULT_TEMPLATE_COLUMN, part.delta, headerRow, subHeaderRow, firstRow, lastPowerHouseRow, totalRow)
+      styleLikeColumn(sheet, MOVEMENT_INPUT_TEMPLATE_COLUMN, part.snapshot, headerRow, subHeaderRow, firstRow, lastPowerHouseRow, totalRow)
+      // The snapshot total still sits in the banded row, just italic with it.
+      sheet
+        .getRange(`${part.snapshot}${totalRow}`)
+        .copyFrom(sheet.getRange(`${MOVEMENT_RESULT_TEMPLATE_COLUMN}${totalRow}`), ExcelScript.RangeCopyType.formats)
+      sheet.getRange(`${part.snapshot}${totalRow}`).getFormat().getFont().setItalic(true)
+
       sheet.getRange(`${part.delta}${headerRow}`).setValue(part.label)
+      // Short, like "Plug 07 2026" — the long form wrapped into three lines.
       sheet
         .getRange(`${part.snapshot}${headerRow}`)
-        .setFormula(`="${part.label} "&${priorMonth}`)
+        .setFormula(`="${part.shortLabel} "&${priorShort}`)
 
       // Through the group total row, so the totals split too.
-      for (let row = firstRow; row <= firstRow + MOVEMENT_PH_COUNT; row++) {
+      for (let row = firstRow; row <= totalRow; row++) {
         sheet
           .getRange(`${part.delta}${row}`)
           .setFormula(`=${part.source}${row}-${part.snapshot}${row}`)
@@ -441,12 +470,42 @@ function applyMovementSplit(workbook: ExcelScript.Workbook): string {
     }
   }
 
+  // Wrapped headers need a width, or "Terminated contracts" spills across its
+  // neighbours the way it did before.
+  sheet.getRange('R:W').getFormat().setColumnWidth(MOVEMENT_SPLIT_COLUMN_WIDTH)
+
   const seeded = seedPriorMonthSplit(sheet)
 
   return (
     'I: Movement schedule R/S/T split the move into new, terminated and transfers, from snapshots ' +
-    `in U/V/W — both blocks, no external link. ${seeded}`
+    `in U/V/W — both blocks, styled off columns C and L. ${seeded}`
   )
+}
+
+/**
+ * Give a column the look of an existing one: header, sub-header, data rows and
+ * the group total row, each copied from the matching row of the template
+ * column. Formats only — nothing it copies carries a value or a formula.
+ */
+function styleLikeColumn(
+  sheet: ExcelScript.Worksheet,
+  templateColumn: string,
+  targetColumn: string,
+  headerRow: number,
+  subHeaderRow: number,
+  firstRow: number,
+  lastPowerHouseRow: number,
+  totalRow: number
+) {
+  const pairs = [
+    { from: `${templateColumn}${headerRow}`, to: `${targetColumn}${headerRow}` },
+    { from: `${templateColumn}${subHeaderRow}`, to: `${targetColumn}${subHeaderRow}` },
+    { from: `${templateColumn}${firstRow}`, to: `${targetColumn}${firstRow}:${targetColumn}${lastPowerHouseRow}` },
+    { from: `${templateColumn}${totalRow}`, to: `${targetColumn}${totalRow}` },
+  ]
+  for (const pair of pairs) {
+    sheet.getRange(pair.to).copyFrom(sheet.getRange(pair.from), ExcelScript.RangeCopyType.formats)
+  }
 }
 
 /**
@@ -495,12 +554,28 @@ function seedPriorMonthSplit(sheet: ExcelScript.Worksheet): string {
  */
 function applyDetailsSplit(workbook: ExcelScript.Workbook): string {
   const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
+  const headerRow = 1
+  const subHeaderRow = 2
   const totalRow = DETAILS_FIRST_PH_ROW + DETAILS_PH_COUNT
+  const lastPowerHouseRow = totalRow - 1
 
   for (const block of DETAILS_SPLIT_BLOCKS) {
     block.columns.forEach((column, partIndex) => {
       const part = MOVEMENT_SPLIT[partIndex]
-      sheet.getRange(`${column}1`).setValue(part.label)
+
+      // Column B is the existing count column on this sheet, so the new ones
+      // borrow its header, its accounting format and its banded total.
+      styleLikeColumn(
+        sheet,
+        DETAILS_RESULT_TEMPLATE_COLUMN,
+        column,
+        headerRow,
+        subHeaderRow,
+        DETAILS_FIRST_PH_ROW,
+        lastPowerHouseRow,
+        totalRow
+      )
+      sheet.getRange(`${column}${headerRow}`).setValue(part.label)
 
       for (let index = 0; index < DETAILS_PH_COUNT; index++) {
         const row = DETAILS_FIRST_PH_ROW + index
@@ -511,10 +586,13 @@ function applyDetailsSplit(workbook: ExcelScript.Workbook): string {
       }
       sheet
         .getRange(`${column}${totalRow}`)
-        .setFormula(`=SUM(${column}${DETAILS_FIRST_PH_ROW}:${column}${totalRow - 1})`)
+        .setFormula(`=SUM(${column}${DETAILS_FIRST_PH_ROW}:${column}${lastPowerHouseRow})`)
     })
   }
 
+  // Column widths are deliberately left alone here: G to L are sized for the
+  // BUILDINGS - NEW table further down the same sheet, and a width is a
+  // property of the whole column. The headers wrap instead, like A1 and B1.
   return 'J: Mvt Schedule Details shows new, terminated and transfers beside the net move — buildings G/H/I, vehicles J/K/L.'
 }
 
