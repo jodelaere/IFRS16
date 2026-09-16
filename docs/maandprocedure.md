@@ -20,15 +20,16 @@ submap `Anaplan Exports` van diezelfde maand.
 
 ## 1. De snapshotkolommen vullen — vóór alles
 
-Op tabblad **`Movement schedule`**, alle zes **als waarden**:
+Op tabblad **`Movement schedule`**, alle acht **als waarden**:
 
 | Kopiëren | Plakken in | Waarvoor |
 |---|---|---|
 | `G3:G15` / `G19:G31` | `O3:O15` / `O19:O31` | totaal vorige maand → kolom P |
 | `C3:C15` / `C19:C31` | `U3:U15` / `U19:U31` | nieuw vorige maand → kolom R |
 | `E3:E15` / `E19:E31` | `V3:V15` / `V19:V31` | stopgezet vorige maand → kolom S |
+| `F3:F15` / `F19:F31` | `W3:W15` / `W19:W31` | transfers vorige maand → kolom T |
 
-Kolom C, E en G houden nu nog de vorige maand vast. Na de refresh staat daar de
+Kolom C, E, F en G houden nu nog de vorige maand vast. Na de refresh staat daar de
 nieuwe maand en zijn die cijfers weg.
 
 **Plak als waarden** (Ctrl+Shift+V → Waarden). Kolom G bestaat uit XLOOKUP-
@@ -96,7 +97,7 @@ outputtabellen opnieuw opbouwen voordat de pivots er iets aan hebben.
 | `Movement schedule` G1 / G17 | de nieuwe maand |
 | `Mvt Schedule Details` B1 / E1 | `mvt P{nn}` van de nieuwe maand |
 | `Mvt Schedule Details` A19 | de nieuwe contracten van deze maand |
-| `Movement schedule` R + S | moet optellen tot kolom P, op elke rij |
+| `Movement schedule` R + S + T | moet optellen tot kolom P, op elke rij |
 
 Staat er een verschil in kolom J, dan is de plug in kolom L nog niet goed gezet
 voor deze snit. Plug hem bij tot J leeg is — maar kijk eerst of het verschil
@@ -132,9 +133,9 @@ Twee dingen die je zelf moet bekijken:
 tegen elkaar weggestreept, plus alle herziening van de vorige maand. Zie
 [automation-design.md](automation-design.md#wat-kolom-p-wél-en-niet-is).
 
-Kolom **R** en **S** splitsen hem wel: R is nieuw, S is stopgezet, en samen
-tellen ze terug op tot P. Dezelfde splitsing staat op `Mvt Schedule Details` in
-G/H (buildings) en J/K (vehicles).
+Kolom **R**, **S** en **T** splitsen hem wel: nieuw, stopgezet en transfers, en
+samen tellen ze terug op tot P. Dezelfde splitsing staat op
+`Mvt Schedule Details` in G/H/I (buildings) en J/K/L (vehicles).
 
 Wil je weten wélke contracten er deze maand bijgekomen zijn: dat is
 BUILDINGS - NEW.

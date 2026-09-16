@@ -76,15 +76,40 @@ const MOVEMENT_PH_COUNT = 12
  * renamed — which is exactly what happened when the WorkingVersion was
  * promoted. A snapshot needs no second file.
  */
-const MOVEMENT_NEW_DELTA_COLUMN = 'R'
-const MOVEMENT_OUT_DELTA_COLUMN = 'S'
-const MOVEMENT_NEW_SNAPSHOT_COLUMN = 'U'
-const MOVEMENT_OUT_SNAPSHOT_COLUMN = 'V'
+const MOVEMENT_SPLIT = [
+  { source: 'C', delta: 'R', snapshot: 'U', label: 'New contracts', seed: 'newContracts' },
+  { source: 'E', delta: 'S', snapshot: 'V', label: 'Terminated contracts', seed: 'terminated' },
+  { source: 'F', delta: 'T', snapshot: 'W', label: 'Transfers', seed: 'transfers' },
+]
+
+/**
+ * P7 2026 New and Terminated per PowerHouse, in Movement schedule row order,
+ * group total last. Read from the July workbook
+ * (P7 2026/IFRS 16/#2026.07 - Board Slides (Powerquery).xlsx), columns C and E.
+ *
+ * These seed the snapshot columns once, because August is the first close that
+ * has them and no earlier run photographed July. From P9 onwards the monthly
+ * step fills them and this table is never used again — the seed only writes
+ * into cells that are still empty, so re-running setup in a later month cannot
+ * drag July's figures back in.
+ */
+const PRIOR_MONTH_SEED: { [block: string]: { [column: string]: number[] } } = {
+  buildings: {
+    newContracts: [2, 8, 6, 1, 0, 136, 8, 0, 4, 10, 58, 0, 233],
+    terminated: [-4, -13, -14, -1, -1, -49, -13, 0, -1, -6, -88, 0, -190],
+    transfers: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  },
+  vehicles: {
+    newContracts: [18, 30, 394, 7, 0, 374, 134, 4, 29, 18, 106, 58, 1172],
+    terminated: [-45, -45, -463, -36, -10, -413, -473, -12, -163, -24, -62, -121, -1867],
+    transfers: [-1, -2, 0, 8, -1, 0, 0, 3, -7, 0, 0, 0, 0],
+  },
+}
 
 /** Change J columns on Mvt Schedule Details: buildings G/H, vehicles J/K. */
-const DETAILS_SPLIT_COLUMNS = [
-  { newColumn: 'G', outColumn: 'H', movementFirstRow: 3 },
-  { newColumn: 'J', outColumn: 'K', movementFirstRow: 19 },
+const DETAILS_SPLIT_BLOCKS = [
+  { columns: ['G', 'H', 'I'], movementFirstRow: 3 },
+  { columns: ['J', 'K', 'L'], movementFirstRow: 19 },
 ]
 
 function main(workbook: ExcelScript.Workbook): string {
@@ -401,31 +426,64 @@ function applyMovementSplit(workbook: ExcelScript.Workbook): string {
 
   for (const firstRow of MOVEMENT_BLOCK_FIRST_ROWS) {
     const headerRow = firstRow - 2
-    sheet.getRange(`${MOVEMENT_NEW_DELTA_COLUMN}${headerRow}`).setValue('New contracts')
-    sheet.getRange(`${MOVEMENT_OUT_DELTA_COLUMN}${headerRow}`).setValue('Terminated contracts')
-    sheet
-      .getRange(`${MOVEMENT_NEW_SNAPSHOT_COLUMN}${headerRow}`)
-      .setFormula(`="New "&${priorMonth}`)
-    sheet
-      .getRange(`${MOVEMENT_OUT_SNAPSHOT_COLUMN}${headerRow}`)
-      .setFormula(`="Terminated "&${priorMonth}`)
+    for (const part of MOVEMENT_SPLIT) {
+      sheet.getRange(`${part.delta}${headerRow}`).setValue(part.label)
+      sheet
+        .getRange(`${part.snapshot}${headerRow}`)
+        .setFormula(`="${part.label} "&${priorMonth}`)
 
-    // Through the group total row, so the totals split too.
-    for (let row = firstRow; row <= firstRow + MOVEMENT_PH_COUNT; row++) {
-      sheet
-        .getRange(`${MOVEMENT_NEW_DELTA_COLUMN}${row}`)
-        .setFormula(`=C${row}-${MOVEMENT_NEW_SNAPSHOT_COLUMN}${row}`)
-      sheet
-        .getRange(`${MOVEMENT_OUT_DELTA_COLUMN}${row}`)
-        .setFormula(`=E${row}-${MOVEMENT_OUT_SNAPSHOT_COLUMN}${row}`)
+      // Through the group total row, so the totals split too.
+      for (let row = firstRow; row <= firstRow + MOVEMENT_PH_COUNT; row++) {
+        sheet
+          .getRange(`${part.delta}${row}`)
+          .setFormula(`=${part.source}${row}-${part.snapshot}${row}`)
+      }
     }
   }
 
+  const seeded = seedPriorMonthSplit(sheet)
+
   return (
-    `I: Movement schedule ${MOVEMENT_NEW_DELTA_COLUMN}/${MOVEMENT_OUT_DELTA_COLUMN} split the move into new ` +
-    `and terminated, from snapshots in ${MOVEMENT_NEW_SNAPSHOT_COLUMN}/${MOVEMENT_OUT_SNAPSHOT_COLUMN} — ` +
-    'both blocks, no external link.'
+    'I: Movement schedule R/S/T split the move into new, terminated and transfers, from snapshots ' +
+    `in U/V/W — both blocks, no external link. ${seeded}`
   )
+}
+
+/**
+ * Fill the snapshot columns with the P7 figures, but only where they are still
+ * empty.
+ *
+ * August is the first close with these columns, so nothing has photographed
+ * July yet and the deltas would read as the full year-to-date. The guard is
+ * what makes this safe to leave in the script: once a month has written real
+ * snapshots, there is nothing empty left to seed and the P7 table is inert.
+ */
+function seedPriorMonthSplit(sheet: ExcelScript.Worksheet): string {
+  const blocks = [
+    { firstRow: MOVEMENT_BLOCK_FIRST_ROWS[0], seed: PRIOR_MONTH_SEED.buildings },
+    { firstRow: MOVEMENT_BLOCK_FIRST_ROWS[1], seed: PRIOR_MONTH_SEED.vehicles },
+  ]
+
+  let written = 0
+  let skipped = 0
+  for (const block of blocks) {
+    for (const part of MOVEMENT_SPLIT) {
+      const values = block.seed[part.seed]
+      for (let index = 0; index <= MOVEMENT_PH_COUNT; index++) {
+        const cell = sheet.getRange(`${part.snapshot}${block.firstRow + index}`)
+        if (String(cell.getValue()) !== '') {
+          skipped++
+          continue
+        }
+        cell.setValue(values[index])
+        written++
+      }
+    }
+  }
+
+  if (written === 0) return 'Snapshots already filled, P7 seed not used.'
+  const tail = skipped > 0 ? `, left ${skipped} already filled` : ''
+  return `Seeded ${written} empty snapshot cell(s) with the P7 figures${tail}.`
 }
 
 /**
@@ -437,34 +495,27 @@ function applyMovementSplit(workbook: ExcelScript.Workbook): string {
  */
 function applyDetailsSplit(workbook: ExcelScript.Workbook): string {
   const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
+  const totalRow = DETAILS_FIRST_PH_ROW + DETAILS_PH_COUNT
 
-  for (const block of DETAILS_SPLIT_COLUMNS) {
-    sheet.getRange(`${block.newColumn}1`).setValue('New contracts')
-    sheet.getRange(`${block.outColumn}1`).setValue('Terminated contracts')
+  for (const block of DETAILS_SPLIT_BLOCKS) {
+    block.columns.forEach((column, partIndex) => {
+      const part = MOVEMENT_SPLIT[partIndex]
+      sheet.getRange(`${column}1`).setValue(part.label)
 
-    for (let index = 0; index < DETAILS_PH_COUNT; index++) {
-      const row = DETAILS_FIRST_PH_ROW + index
-      const sourceRow = block.movementFirstRow + index
+      for (let index = 0; index < DETAILS_PH_COUNT; index++) {
+        const row = DETAILS_FIRST_PH_ROW + index
+        const sourceRow = block.movementFirstRow + index
+        sheet
+          .getRange(`${column}${row}`)
+          .setFormula(`='${SETUP_SHEET_MOVEMENT}'!${part.delta}${sourceRow}`)
+      }
       sheet
-        .getRange(`${block.newColumn}${row}`)
-        .setFormula(`='${SETUP_SHEET_MOVEMENT}'!${MOVEMENT_NEW_DELTA_COLUMN}${sourceRow}`)
-      sheet
-        .getRange(`${block.outColumn}${row}`)
-        .setFormula(`='${SETUP_SHEET_MOVEMENT}'!${MOVEMENT_OUT_DELTA_COLUMN}${sourceRow}`)
-    }
-
-    const totalRow = DETAILS_FIRST_PH_ROW + DETAILS_PH_COUNT
-    const firstRow = DETAILS_FIRST_PH_ROW
-    const lastRow = totalRow - 1
-    sheet
-      .getRange(`${block.newColumn}${totalRow}`)
-      .setFormula(`=SUM(${block.newColumn}${firstRow}:${block.newColumn}${lastRow})`)
-    sheet
-      .getRange(`${block.outColumn}${totalRow}`)
-      .setFormula(`=SUM(${block.outColumn}${firstRow}:${block.outColumn}${lastRow})`)
+        .getRange(`${column}${totalRow}`)
+        .setFormula(`=SUM(${column}${DETAILS_FIRST_PH_ROW}:${column}${totalRow - 1})`)
+    })
   }
 
-  return 'J: Mvt Schedule Details now shows new and terminated beside the net move — buildings G/H, vehicles J/K.'
+  return 'J: Mvt Schedule Details shows new, terminated and transfers beside the net move — buildings G/H/I, vehicles J/K/L.'
 }
 
 /**
