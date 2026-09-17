@@ -736,7 +736,7 @@ function applyMovementSplit(workbook: ExcelScript.Workbook): string {
   // neighbours the way it did before.
   sheet.getRange('R:W').getFormat().setColumnWidth(MOVEMENT_SPLIT_COLUMN_WIDTH)
 
-  const seeded = seedPriorMonthSplit(sheet)
+  const seeded = seedPriorMonthSplit(sheet, workbook)
 
   return (
     'I: Movement schedule R/S/T split the move into new, terminated and transfers, from snapshots ' +
@@ -771,40 +771,62 @@ function styleLikeColumn(
 }
 
 /**
- * Fill the snapshot columns with the P7 figures, but only where they are still
- * empty.
+ * Write the P7 figures into the snapshot columns — for the P8 close only.
  *
- * August is the first close with these columns, so nothing has photographed
- * July yet and the deltas would read as the full year-to-date. The guard is
- * what makes this safe to leave in the script: once a month has written real
- * snapshots, there is nothing empty left to seed and the P7 table is inert.
+ * An earlier version only wrote into cells that were still empty. That sounds
+ * careful and is the opposite: once the columns hold something wrong, the
+ * script can no longer put it right, and re-running looks like it did nothing.
+ * Which is exactly what happened.
+ *
+ * Anchored to the period instead. These figures ARE July, so they belong to the
+ * August close and to no other. When the workbook is set to August 2026 they
+ * are written unconditionally, overwriting whatever is there; in any other
+ * month this function does not touch the sheet, so a real snapshot taken during
+ * a later close is safe.
  */
-function seedPriorMonthSplit(sheet: ExcelScript.Worksheet): string {
-  const blocks = [
-    { firstRow: MOVEMENT_BLOCK_FIRST_ROWS[0], seed: PRIOR_MONTH_SEED.buildings },
-    { firstRow: MOVEMENT_BLOCK_FIRST_ROWS[1], seed: PRIOR_MONTH_SEED.vehicles },
-  ]
-
-  let written = 0
-  let skipped = 0
-  for (const block of blocks) {
-    for (const part of MOVEMENT_SPLIT) {
-      const values = block.seed[part.seed]
-      for (let index = 0; index <= MOVEMENT_PH_COUNT; index++) {
-        const cell = sheet.getRange(`${part.snapshot}${block.firstRow + index}`)
-        if (String(cell.getValue()) !== '') {
-          skipped++
-          continue
-        }
-        cell.setValue(values[index])
-        written++
-      }
-    }
+function seedPriorMonthSplit(sheet: ExcelScript.Worksheet, workbook: ExcelScript.Workbook): string {
+  const period = reportingPeriod(workbook)
+  if (!period) return 'Snapshots left alone: reporting period unreadable.'
+  if (period.getFullYear() !== 2026 || period.getMonth() + 1 !== 8) {
+    return `Snapshots left alone: the P7 seed belongs to August 2026, workbook is on ${period.getFullYear()}-${period.getMonth() + 1}.`
   }
 
-  if (written === 0) return 'Snapshots already filled, P7 seed not used.'
-  const tail = skipped > 0 ? `, left ${skipped} already filled` : ''
-  return `Seeded ${written} empty snapshot cell(s) with the P7 figures${tail}.`
+  for (const firstRow of MOVEMENT_BLOCK_FIRST_ROWS) {
+    // Through X, one past the snapshots: an earlier run left a stray column
+    // there and it has to go, or it reads as a fourth snapshot.
+    sheet
+      .getRangeByIndexes(firstRow - 1, 20, MOVEMENT_PH_COUNT + 1, 4)
+      .clear(ExcelScript.ClearApplyTo.contents)
+    sheet.getRangeByIndexes(firstRow - 3, 23, 1, 1).clear(ExcelScript.ClearApplyTo.all)
+  }
+
+  let written = 0
+  for (const block of [
+    { firstRow: MOVEMENT_BLOCK_FIRST_ROWS[0], seed: PRIOR_MONTH_SEED.buildings },
+    { firstRow: MOVEMENT_BLOCK_FIRST_ROWS[1], seed: PRIOR_MONTH_SEED.vehicles },
+  ]) {
+    for (const part of MOVEMENT_SPLIT) {
+      const values = block.seed[part.seed]
+      const column: number[][] = []
+      for (let index = 0; index <= MOVEMENT_PH_COUNT; index++) column.push([values[index]])
+      sheet
+        .getRange(`${part.snapshot}${block.firstRow}:${part.snapshot}${block.firstRow + MOVEMENT_PH_COUNT}`)
+        .setValues(column)
+      written += column.length
+    }
+  }
+  return `Wrote the P7 seed into ${written} snapshot cells (August 2026 only).`
+}
+
+/** The reporting period as a date, or null when the named cell is missing. */
+function reportingPeriod(workbook: ExcelScript.Workbook): Date | null {
+  const named = workbook.getNamedItem(SETUP_PERIOD_NAME)
+  if (!named) return null
+  const serial = Number(named.getRange().getValue())
+  if (isNaN(serial) || serial <= 0) return null
+  // Excel day 1 is 1900-01-01, and it counts a 1900-02-29 that never existed;
+  // 1899-12-30 as the origin absorbs both.
+  return new Date(Date.UTC(1899, 11, 30) + serial * 86400000)
 }
 
 /**
@@ -1046,15 +1068,22 @@ function applySnapshotSheet(workbook: ExcelScript.Workbook): string {
   sheet.getRange('B2:B2000').setNumberFormat('dd/mm/yyyy')
   sheet.getRange(`E2:E${SNAPSHOT_ROW_COUNT + 1}`).setNumberFormat('dd/mm/yyyy')
 
-  const seeded = seedPriorTerminated(sheet)
+  const seeded = seedPriorTerminated(sheet, workbook)
   return `M: ${SNAPSHOT_SHEET} sheet — A holds this month's terminated set, D/E last month's. ${seeded}`
 }
 
-/** Only writes when D2 is still empty, so a later month cannot be overwritten. */
-function seedPriorTerminated(sheet: ExcelScript.Worksheet): string {
-  if (String(sheet.getRange('D2').getValue()) !== '') {
-    return 'Prior snapshot already filled, P7 seed not used.'
+/**
+ * Anchored to August 2026 for the same reason as the other seed: these are July
+ * figures, they belong to the P8 close, and a guard that only fills empty cells
+ * cannot repair a wrong one.
+ */
+function seedPriorTerminated(sheet: ExcelScript.Worksheet, workbook: ExcelScript.Workbook): string {
+  const period = reportingPeriod(workbook)
+  if (!period) return 'Prior snapshot left alone: reporting period unreadable.'
+  if (period.getFullYear() !== 2026 || period.getMonth() + 1 !== 8) {
+    return 'Prior snapshot left alone: the P7 seed belongs to August 2026.'
   }
+  sheet.getRangeByIndexes(1, 3, SNAPSHOT_ROW_COUNT, 2).clear(ExcelScript.ClearApplyTo.contents)
   const rows = PRIOR_TERMINATED_SEED.map((entry) => {
     const parts = entry[1].split('-')
     return [entry[0], new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))]
