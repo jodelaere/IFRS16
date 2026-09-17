@@ -130,6 +130,18 @@ const PRIOR_MONTH_SEED: { [block: string]: { [column: string]: number[] } } = {
  */
 const SNAPSHOT_SHEET = 'Snapshot'
 const SNAPSHOT_ROW_COUNT = 800
+/** Rows 1-8 explain what the sheet is; the lists start below that. */
+const SNAPSHOT_FIRST_DATA_ROW = 9
+const SNAPSHOT_NOTE = [
+  'Werkblad van de automatisering. Niet met de hand aanpassen, op één stap na (zie onder).',
+  '',
+  'Kolom A en B: de contracten die op dit moment als stopgezet tellen. Dit is een formule over Table1 — dezelfde',
+  'regel als de Terminated-pivot: Land and buildings, einddatum in het rapportagejaar t/m de rapportagemaand,',
+  'geen transfer-out-datum.',
+  'Kolom D en E: exact diezelfde lijst zoals hij vórige maand was, als getypte waarden.',
+  'Het verschil tussen de twee vult BUILDINGS - TERMINATED en BUILDINGS - REINSTATED op Mvt Schedule Details.',
+  'ÉÉN HANDELING PER MAAND: kopieer A en B naar D en E als waarden, vóórdat je de nieuwe Anaplan-export inplakt.',
+]
 
 /** BUILDINGS - REINSTATED, past the terminated block. */
 const DETAILS_BACK_FIRST_COLUMN_INDEX = 27 // AB
@@ -981,7 +993,8 @@ function applyTerminatedBuildings(workbook: ExcelScript.Workbook): string {
   // A contract entered late with a July end date counts this month too, and one
   // that already counted last month does not count again. Set difference
   // against the snapshot, so this reconciles to Movement schedule column S.
-  const priorKeys = `${SNAPSHOT_SHEET}!$D$2:$D$${SNAPSHOT_ROW_COUNT + 1}`
+  const priorKeys =
+    `${SNAPSHOT_SHEET}!$D$${SNAPSHOT_FIRST_DATA_ROW}:$D$${SNAPSHOT_FIRST_DATA_ROW + SNAPSHOT_ROW_COUNT - 1}`
   sheet.getRange(`${firstColumn}${DETAILS_NEW_FIRST_ROW}`).setFormula(
     '=LET(t,Table1,' +
     `keep,${TERMINATED_CONDITION}*ISNA(XMATCH(INDEX(t,,1),${priorKeys})),` +
@@ -1053,23 +1066,54 @@ function applySnapshotSheet(workbook: ExcelScript.Workbook): string {
   let sheet = workbook.getWorksheet(SNAPSHOT_SHEET)
   if (!sheet) sheet = workbook.addWorksheet(SNAPSHOT_SHEET)
 
-  sheet.getRange('A1').setValue('Key — this month')
-  sheet.getRange('B1').setValue('End date — this month')
-  sheet.getRange('D1').setValue('Key — last month')
-  sheet.getRange('E1').setValue('End date — last month')
-  sheet.getRange('A1:E1').getFormat().getFont().setBold(true)
-  sheet.getRange('A1').setValue('Key — this month')
+  // Say on the sheet what it is. Without this it is 187 rows of keys and dates
+  // with no explanation, which is worse than useless — it looks like a mistake.
+  sheet.getRange('A1').setValue('SNAPSHOT')
+  sheet.getRange('A1').getFormat().getFont().setBold(true)
+  sheet.getRange('A1').getFormat().getFont().setSize(14)
+  SNAPSHOT_NOTE.forEach((line, index) => {
+    sheet.getRange(`A${index + 2}`).setValue(line)
+  })
+  sheet.getRange(`A${SNAPSHOT_NOTE.length + 1}`).getFormat().getFont().setBold(true)
 
-  sheet.getRange('A2').setFormula(
+  const header = SNAPSHOT_FIRST_DATA_ROW - 1
+  const last = SNAPSHOT_FIRST_DATA_ROW + SNAPSHOT_ROW_COUNT - 1
+  sheet.getRange(`A${header}`).setValue('Contract — deze maand')
+  sheet.getRange(`B${header}`).setValue('Einddatum')
+  sheet.getRange(`D${header}`).setValue('Contract — vorige maand')
+  sheet.getRange(`E${header}`).setValue('Einddatum')
+  sheet
+    .getRange(`A${header}:E${header}`)
+    .copyFrom(sheet.getRange(`A${header}`), ExcelScript.RangeCopyType.formats)
+  sheet.getRange(`A${header}:E${header}`).getFormat().getFont().setBold(true)
+
+  // A count beside each list, so the two are comparable at a glance without
+  // scrolling to the bottom. 193 against 187 for P8.
+  sheet.getRange(`B${header - 1}`).setFormula(
+    `=SUM(--(CHOOSECOLS(A${SNAPSHOT_FIRST_DATA_ROW}#,1)<>""))&" contracten"`
+  )
+  sheet.getRange(`E${header - 1}`).setFormula(
+    `=SUM(--(D${SNAPSHOT_FIRST_DATA_ROW}:D${last}<>""))&" contracten"`
+  )
+  sheet.getRange(`B${header - 1}:E${header - 1}`).getFormat().getFont().setItalic(true)
+
+  sheet.getRange(`A${SNAPSHOT_FIRST_DATA_ROW}`).setFormula(
     '=LET(t,Table1,' +
     `keep,${TERMINATED_CONDITION},` +
     'FILTER(HSTACK(INDEX(t,,1),INDEX(t,,11)),keep,""))'
   )
-  sheet.getRange('B2:B2000').setNumberFormat('dd/mm/yyyy')
-  sheet.getRange(`E2:E${SNAPSHOT_ROW_COUNT + 1}`).setNumberFormat('dd/mm/yyyy')
+  sheet.getRange(`B${SNAPSHOT_FIRST_DATA_ROW}:B${last}`).setNumberFormat('dd/mm/yyyy')
+  sheet.getRange(`E${SNAPSHOT_FIRST_DATA_ROW}:E${last}`).setNumberFormat('dd/mm/yyyy')
+
+  // Dates showed as ###### because the columns were never widened.
+  sheet.getRange('A:A').getFormat().setColumnWidth(230)
+  sheet.getRange('B:B').getFormat().setColumnWidth(90)
+  sheet.getRange('C:C').getFormat().setColumnWidth(24)
+  sheet.getRange('D:D').getFormat().setColumnWidth(230)
+  sheet.getRange('E:E').getFormat().setColumnWidth(90)
 
   const seeded = seedPriorTerminated(sheet, workbook)
-  return `M: ${SNAPSHOT_SHEET} sheet — A holds this month's terminated set, D/E last month's. ${seeded}`
+  return `M: ${SNAPSHOT_SHEET} sheet — explained at the top, lists from row ${SNAPSHOT_FIRST_DATA_ROW}. ${seeded}`
 }
 
 /**
@@ -1083,19 +1127,19 @@ function seedPriorTerminated(sheet: ExcelScript.Worksheet, workbook: ExcelScript
   if (period.getFullYear() !== 2026 || period.getMonth() + 1 !== 8) {
     return 'Prior snapshot left alone: the P7 seed belongs to August 2026.'
   }
-  sheet.getRangeByIndexes(1, 3, SNAPSHOT_ROW_COUNT, 2).clear(ExcelScript.ClearApplyTo.contents)
+  sheet.getRangeByIndexes(SNAPSHOT_FIRST_DATA_ROW - 1, 3, SNAPSHOT_ROW_COUNT, 2).clear(ExcelScript.ClearApplyTo.contents)
   const rows = PRIOR_TERMINATED_SEED.map((entry) => {
     const parts = entry[1].split('-')
     return [entry[0], new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))]
   })
   const keys: string[][] = rows.map((row) => [row[0] as string])
-  sheet.getRangeByIndexes(1, 3, keys.length, 1).setValues(keys)
+  sheet.getRangeByIndexes(SNAPSHOT_FIRST_DATA_ROW - 1, 3, keys.length, 1).setValues(keys)
   // Dates go in as formulas for the same reason the period cell does: a string
   // would be parsed under whatever locale the workbook opens in.
   PRIOR_TERMINATED_SEED.forEach((entry, index) => {
     const parts = entry[1].split('-')
     sheet
-      .getRangeByIndexes(index + 1, 4, 1, 1)
+      .getRangeByIndexes(SNAPSHOT_FIRST_DATA_ROW - 1 + index, 4, 1, 1)
       .setFormula(`=DATE(${Number(parts[0])},${Number(parts[1])},${Number(parts[2])})`)
   })
   return `Seeded ${PRIOR_TERMINATED_SEED.length} contracts from the P7 export.`
@@ -1139,8 +1183,9 @@ function applyReinstatedBuildings(workbook: ExcelScript.Workbook): string {
     sheet.getRangeByIndexes(headerRow - 1, DETAILS_BACK_FIRST_COLUMN_INDEX + index, 1, 1).setValue(header)
   })
 
-  const priorKeys = `${SNAPSHOT_SHEET}!$D$2:$D$${SNAPSHOT_ROW_COUNT + 1}`
-  const priorEnds = `${SNAPSHOT_SHEET}!$E$2:$E$${SNAPSHOT_ROW_COUNT + 1}`
+  const lastRow = SNAPSHOT_FIRST_DATA_ROW + SNAPSHOT_ROW_COUNT - 1
+  const priorKeys = `${SNAPSHOT_SHEET}!$D$${SNAPSHOT_FIRST_DATA_ROW}:$D$${lastRow}`
+  const priorEnds = `${SNAPSHOT_SHEET}!$E$${SNAPSHOT_FIRST_DATA_ROW}:$E$${lastRow}`
   sheet.getRange(`${first}${DETAILS_NEW_FIRST_ROW}`).setFormula(
     '=LET(t,Table1,' +
     `prior,${priorKeys},priorEnd,${priorEnds},` +

@@ -94,6 +94,8 @@ const DETAILS_BACK_COLUMN_COUNT = 5
 /** The terminated-set snapshot: A holds this month's, D/E last month's. */
 const SNAPSHOT_SHEET = 'Snapshot'
 const SNAPSHOT_ROW_COUNT = 800
+/** Rows 1-8 explain the sheet; the lists start below that. */
+const SNAPSHOT_FIRST_DATA_ROW = 9
 
 /** Anaplan data lands in these Excel Tables; the Power Queries read them by name. */
 const TABLE_29_INPUT = 'Table2.9'
@@ -297,8 +299,9 @@ function capturePriorTerminated(workbook: ExcelScript.Workbook) {
   const sheet = workbook.getWorksheet(SNAPSHOT_SHEET)
   if (!sheet) throw new Error(`Sheet "${SNAPSHOT_SHEET}" not found — run the template setup script first.`)
 
-  const live = sheet.getRangeByIndexes(1, 0, SNAPSHOT_ROW_COUNT, 2).getValues()
-  sheet.getRangeByIndexes(1, 3, SNAPSHOT_ROW_COUNT, 2).setValues(live)
+  const first = SNAPSHOT_FIRST_DATA_ROW - 1
+  const live = sheet.getRangeByIndexes(first, 0, SNAPSHOT_ROW_COUNT, 2).getValues()
+  sheet.getRangeByIndexes(first, 3, SNAPSHOT_ROW_COUNT, 2).setValues(live)
 }
 
 /**

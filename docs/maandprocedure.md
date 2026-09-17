@@ -33,11 +33,13 @@ En op tabblad **`Snapshot`**, ook als waarden:
 
 | Kopiëren | Plakken in | Waarvoor |
 |---|---|---|
-| `A2:B801` | `D2:E801` | de beëindigde contracten van vorige maand → BUILDINGS - TERMINATED en - REINSTATED |
+| `A9:B808` | `D9:E808` | de stopgezette contracten van vorige maand → BUILDINGS - TERMINATED en - REINSTATED |
 
 Kolom A is een formule over `Table1` en beschrijft dus vorige maand zolang de
 oude export er nog in staat. Na het plakken van de nieuwe export beschrijft hij
 deze maand en is vorige maand onherroepelijk weg.
+
+Bovenaan dat blad staat in het kort wat het is. Verder hoef je er niets mee.
 
 Kolom C, E, F en G houden nu nog de vorige maand vast. Na de refresh staat daar de
 nieuwe maand en zijn die cijfers weg.
@@ -150,11 +152,8 @@ Kolom **R**, **S** en **T** splitsen hem wel: nieuw, stopgezet en transfers, en
 samen tellen ze terug op tot P. Dezelfde splitsing staat op
 `Mvt Schedule Details` in G/H/I (buildings) en J/K/L (vehicles).
 
-Wil je weten wélke contracten er deze maand bijgekomen of afgelopen zijn: dat
-zijn de twee tabellen op `Mvt Schedule Details` — **BUILDINGS - NEW** vanaf A19
-en **BUILDINGS - TERMINATED** vanaf P19, naast elkaar.
-
-Er staan er drie: **BUILDINGS - NEW** vanaf A19, **BUILDINGS - TERMINATED**
+Wil je weten wélke contracten er deze maand bijgekomen of afgelopen zijn: dan
+staan er drie tabellen op `Mvt Schedule Details`: **BUILDINGS - NEW** vanaf A19, **BUILDINGS - TERMINATED**
 vanaf P19 en **BUILDINGS - REINSTATED** vanaf AB19. Die laatste twee zijn het
 verschil met de lijst van vorige maand, niet met de kalender: een contract dat
 vorige maand als stopgezet stond en nu een einddatum in 2029 heeft, komt in
