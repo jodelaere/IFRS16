@@ -89,22 +89,23 @@ Daarom hetzelfde middel als kolom O:
 
 | Kolom | Wat |
 |---|---|
-| `U`, `V`, `W` | getypte momentopname van vorige maands New, Terminated en Transfers |
-| `R` | `=C-U` — nieuw deze maand |
-| `S` | `=E-V` — stopgezet deze maand |
-| `T` | `=F-W` — transfers deze maand |
+| `T`, `U` | getypte momentopname van vorige maands New en Terminated |
+| `R` | `=C-T` — nieuw deze maand |
+| `S` | `=E-U` — stopgezet deze maand |
 
-Beide blokken, geen tweede werkmap. `R + S + T = P` is dan een gratis controle.
+Beide blokken, geen tweede werkmap.
 
-> Transfers moeten mee. `G = B+C+D+E+F`, met B (december) vast en D (M&A) nul,
-> dus de maandmutatie is `ΔC + ΔE + ΔF`. Bij buildings is F het hele jaar nul en
-> valt dat niet op; bij vehicles beweegt hij wel — Continu ging van +8 naar −2,
-> Redmore van −7 naar +5 — en zonder die derde kolom sluit `R + S` daar niet aan
-> op P. Nagerekend op alle 26 rijen van P8.
+> **Transfers zijn er bewust uit gelaten** — die kolom is uit het blad gehaald.
+> Het gevolg is het vermelden waard: `G = B+C+D+E+F`, met B (december) vast en D
+> (M&A) nul, dus de maandmutatie is `ΔC + ΔE + ΔF`. Bij buildings is F het hele
+> jaar nul, dus `R + S = P` exact. Bij vehicles beweegt F, en dan blijft `R + S`
+> achter op P precies waar dat gebeurd is: in P8 Accent −3, Continu −10, House
+> of Support +1 en Redmore +12. Die vier heffen elkaar op, dus de totalen
+> kloppen nog; de afzonderlijke rijen niet.
 
 Wijziging **J** zet dezelfde splitsing op `Mvt Schedule Details` naast de
-nettobeweging: buildings in G/H/I, vehicles in J/K/L, gelezen uit R, S en T
-zodat de rekensom niet twee keer in de werkmap staat.
+nettobeweging: buildings in G/H, vehicles in J/K, gelezen uit R en S zodat de
+rekensom niet twee keer in de werkmap staat.
 
 Wijziging **K** splitst de lease liability in de spill in non-current (kolom 13)
 en current (kolom 14):

@@ -136,7 +136,7 @@ function main(
 
   // Columns C, E and G still hold the previous month's figures until the new
   // Anaplan data is loaded, so photograph them first — that is exactly what the
-  // snapshot columns O, U and V need.
+  // snapshot columns O, T and U need.
   const previousMonthCounts = capturePreviousMonthCounts(workbook)
 
   // Before the new export goes in: this month's terminated set is still last
@@ -187,7 +187,7 @@ function setReportingPeriod(workbook: ExcelScript.Workbook, periodEndDate: strin
  * each photograph goes.
  *
  *   G -> O   total contracts, so column P can show the net month-on-month move
- *   C -> U   new contracts, and E -> V terminated, so columns R and S can split
+ *   C -> T   new contracts, and E -> U terminated, so columns R and S can split
  *            that move into its two halves (template change I)
  *
  * All three are typed snapshots for the same reason: after the refresh the
@@ -197,8 +197,8 @@ function setReportingPeriod(workbook: ExcelScript.Workbook, periodEndDate: strin
  */
 const PRIOR_MONTH_SNAPSHOTS = [
   { source: 'G', target: 'O' },
-  { source: 'C', target: 'U' },
-  { source: 'E', target: 'V' },
+  { source: 'C', target: 'T' },
+  { source: 'E', target: 'U' },
 ]
 
 /** Both blocks, including the group total row. */

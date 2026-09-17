@@ -20,14 +20,13 @@ submap `Anaplan Exports` van diezelfde maand.
 
 ## 1. De snapshotkolommen vullen — vóór alles
 
-Op tabblad **`Movement schedule`**, alle acht **als waarden**:
+Op tabblad **`Movement schedule`**, alle zes **als waarden**:
 
 | Kopiëren | Plakken in | Waarvoor |
 |---|---|---|
 | `G3:G15` / `G19:G31` | `O3:O15` / `O19:O31` | totaal vorige maand → kolom P |
-| `C3:C15` / `C19:C31` | `U3:U15` / `U19:U31` | nieuw vorige maand → kolom R |
-| `E3:E15` / `E19:E31` | `V3:V15` / `V19:V31` | stopgezet vorige maand → kolom S |
-| `F3:F15` / `F19:F31` | `W3:W15` / `W19:W31` | transfers vorige maand → kolom T |
+| `C3:C15` / `C19:C31` | `T3:T15` / `T19:T31` | nieuw vorige maand → kolom R |
+| `E3:E15` / `E19:E31` | `U3:U15` / `U19:U31` | stopgezet vorige maand → kolom S |
 
 En op tabblad **`Snapshot`**, ook als waarden:
 
@@ -41,7 +40,7 @@ deze maand en is vorige maand onherroepelijk weg.
 
 Bovenaan dat blad staat in het kort wat het is. Verder hoef je er niets mee.
 
-Kolom C, E, F en G houden nu nog de vorige maand vast. Na de refresh staat daar de
+Kolom C, E en G houden nu nog de vorige maand vast. Na de refresh staat daar de
 nieuwe maand en zijn die cijfers weg.
 
 **Plak als waarden** (Ctrl+Shift+V → Waarden). Kolom G bestaat uit XLOOKUP-
@@ -112,7 +111,8 @@ outputtabellen opnieuw opbouwen voordat de pivots er iets aan hebben.
 | `Mvt Schedule Details` A82 | de contracten die deze maand zijn stopgezet |
 | `Mvt Schedule Details` A145 | de contracten die vorige maand stopgezet waren en nu verlengd |
 | K80 − E143 | moet gelijk zijn aan `Movement schedule` S15, met omgekeerd teken |
-| `Movement schedule` R + S + T | moet optellen tot kolom P, op elke rij |
+| `Movement schedule` R15 + S15 | moet gelijk zijn aan P15 (buildings, op elke rij) |
+| `Movement schedule` R31 + S31 | moet gelijk zijn aan P31 (vehicles, alleen het totaal) |
 
 Staat er een verschil in kolom J, dan is de plug in kolom L nog niet goed gezet
 voor deze snit. Plug hem bij tot J leeg is — maar kijk eerst of het verschil
@@ -148,9 +148,15 @@ Twee dingen die je zelf moet bekijken:
 tegen elkaar weggestreept, plus alle herziening van de vorige maand. Zie
 [automation-design.md](automation-design.md#wat-kolom-p-wél-en-niet-is).
 
-Kolom **R**, **S** en **T** splitsen hem wel: nieuw, stopgezet en transfers, en
-samen tellen ze terug op tot P. Dezelfde splitsing staat op
-`Mvt Schedule Details` in G/H/I (buildings) en J/K/L (vehicles).
+Kolom **R** en **S** splitsen hem in nieuw en stopgezet. Dezelfde splitsing
+staat op `Mvt Schedule Details` in G/H (buildings) en J/K (vehicles).
+
+**Transfers zitten er niet bij.** `G = B+C+D+E+F`, met B (december) vast en D
+(M&A) nul, dus de maandmutatie is de verandering in C, E én F. Bij buildings is
+F het hele jaar nul en telt `R + S` dus exact terug op tot P, op elke rij. Bij
+vehicles beweegt F wel, en daar blijft `R + S` achter op P precies waar dat
+gebeurd is — in P8 bij Accent (−3), Continu (−10), House of Support (+1) en
+Redmore (+12). Die vier heffen elkaar op, dus het groepstotaal klopt nog wel.
 
 Wil je weten wélke contracten er deze maand bijgekomen of afgelopen zijn: dan
 staan er drie tabellen onder elkaar in kolom A van `Mvt Schedule Details`:

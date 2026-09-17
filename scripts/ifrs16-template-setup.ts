@@ -97,9 +97,8 @@ const MOVEMENT_PH_COUNT = 12
  * promoted. A snapshot needs no second file.
  */
 const MOVEMENT_SPLIT = [
-  { source: 'C', delta: 'R', snapshot: 'U', label: 'New contracts', shortLabel: 'New', seed: 'newContracts' },
-  { source: 'E', delta: 'S', snapshot: 'V', label: 'Terminated contracts', shortLabel: 'Ended', seed: 'terminated' },
-  { source: 'F', delta: 'T', snapshot: 'W', label: 'Transfers between PHs', shortLabel: 'Transf', seed: 'transfers' },
+  { source: 'C', delta: 'R', snapshot: 'T', label: 'New contracts', shortLabel: 'New', seed: 'newContracts' },
+  { source: 'E', delta: 'S', snapshot: 'U', label: 'Terminated contracts', shortLabel: 'Ended', seed: 'terminated' },
 ]
 
 /**
@@ -128,12 +127,10 @@ const PRIOR_MONTH_SEED: { [block: string]: { [column: string]: number[] } } = {
   buildings: {
     newContracts: [2, 8, 6, 1, 0, 136, 8, 0, 4, 10, 58, 0, 233],
     terminated: [-4, -13, -14, -1, -1, -49, -13, 0, -1, -6, -88, 0, -190],
-    transfers: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   },
   vehicles: {
     newContracts: [18, 30, 394, 7, 0, 374, 134, 4, 29, 18, 106, 58, 1172],
     terminated: [-45, -45, -463, -36, -10, -413, -473, -12, -163, -24, -62, -121, -1867],
-    transfers: [-1, -2, 0, 8, -1, 0, 0, 3, -7, 0, 0, 0, 0],
   },
 }
 
@@ -408,8 +405,8 @@ const DETAILS_OUT_HEADERS = [
 
 /** Change J columns on Mvt Schedule Details: buildings G/H, vehicles J/K. */
 const DETAILS_SPLIT_BLOCKS = [
-  { columns: ['G', 'H', 'I'], movementFirstRow: 3 },
-  { columns: ['J', 'K', 'L'], movementFirstRow: 19 },
+  { columns: ['G', 'H'], movementFirstRow: 3 },
+  { columns: ['J', 'K'], movementFirstRow: 19 },
 ]
 
 function main(workbook: ExcelScript.Workbook): string {
@@ -764,13 +761,13 @@ function applyMovementSplit(workbook: ExcelScript.Workbook): string {
 
   // Wrapped headers need a width, or "Terminated contracts" spills across its
   // neighbours the way it did before.
-  sheet.getRange('R:W').getFormat().setColumnWidth(MOVEMENT_SPLIT_COLUMN_WIDTH)
+  sheet.getRange('R:U').getFormat().setColumnWidth(MOVEMENT_SPLIT_COLUMN_WIDTH)
 
   const seeded = seedPriorMonthSplit(sheet, workbook)
 
   return (
-    'I: Movement schedule R/S/T split the move into new, terminated and transfers, from snapshots ' +
-    `in U/V/W — both blocks, styled off columns C and L. ${seeded}`
+    'I: Movement schedule R/S split the move into new and terminated, from snapshots in T/U — ' +
+    `both blocks, styled off columns C and L. ${seeded}`
   )
 }
 
@@ -822,12 +819,12 @@ function seedPriorMonthSplit(sheet: ExcelScript.Worksheet, workbook: ExcelScript
   }
 
   for (const firstRow of MOVEMENT_BLOCK_FIRST_ROWS) {
-    // Through X, one past the snapshots: an earlier run left a stray column
-    // there and it has to go, or it reads as a fourth snapshot.
+    // T through X: the two snapshots plus everything an earlier layout left
+    // behind, when they sat at U/V/W and transfers had a column of its own.
     sheet
-      .getRangeByIndexes(firstRow - 1, 20, MOVEMENT_PH_COUNT + 1, 4)
+      .getRangeByIndexes(firstRow - 1, 19, MOVEMENT_PH_COUNT + 1, 5)
       .clear(ExcelScript.ClearApplyTo.contents)
-    sheet.getRangeByIndexes(firstRow - 3, 23, 1, 1).clear(ExcelScript.ClearApplyTo.all)
+    sheet.getRangeByIndexes(firstRow - 3, 21, 1, 3).clear(ExcelScript.ClearApplyTo.all)
   }
 
   let written = 0
@@ -907,7 +904,7 @@ function applyDetailsSplit(workbook: ExcelScript.Workbook): string {
   // Column widths are deliberately left alone here: G to L are sized for the
   // BUILDINGS - NEW table further down the same sheet, and a width is a
   // property of the whole column. The headers wrap instead, like A1 and B1.
-  return 'J: Mvt Schedule Details shows new, terminated and transfers beside the net move — buildings G/H/I, vehicles J/K/L.'
+  return 'J: Mvt Schedule Details shows new and terminated beside the net move — buildings G/H, vehicles J/K.'
 }
 
 /**
