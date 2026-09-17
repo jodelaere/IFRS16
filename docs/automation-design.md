@@ -132,13 +132,18 @@ zijn hele spill-kolommen.
 Onder BUILDINGS - NEW in kolom A, met dezelfde elf kolommen (een beëindigd
 contract heeft geen lease liability). Daaronder BUILDINGS - REINSTATED.
 
-De reserveringen zijn op de echte spreiding gemaakt, niet gegokt: gebouwen die
-in één maand ingaan liepen op tot **131** in januari 2026, contracten die in één
-maand aflopen tot **66** in december 2026. Een spill die zijn blok uitgroeit
-raakt de volgende kop en wordt `#SPILL!` midden in een afsluiting. Vandaar 200
-rijen voor NEW en 120 voor de andere twee — ruim de helft meer dan ooit gezien.
-Het script meldt per blok hoeveel rijen gevuld zijn en hoeveel er over zijn, dus
-de marge is zichtbaar in plaats van aangenomen.
+Elk blok krijgt **60 rijen**: NEW op 19-78, TERMINATED op 82-141, REINSTATED op
+145-204. Strak onder elkaar, zodat je alle drie ziet met één keer scrollen.
+
+Een spill heeft lege rijen onder zich nodig — bereikt hij de volgende kop, dan
+wordt het `#SPILL!`. De maandelijkse instroom liep in 2025 en 2026 van 6 tot 30
+gebouwen en de beëindigingen van 11 tot 66, dus 60 dekt alles normaals. Niet
+alles: januari 2026 had er 131 in één maand (een eenmalige inlading, geen
+januaripatroon — januari 2025 had er 29) en december 2026 telt 66 eindes. Zo'n
+maand loopt over zijn blok heen, en dat is zichtbaar als `#SPILL!` in plaats van
+als een fout getal. Oplossing: `rowCount` in het script verhogen en opnieuw
+draaien. Het script meldt per blok hoeveel rijen gevuld zijn en hoeveel er over
+zijn, dus je ziet de marge voordat hij op is.
 
 ```
 =LET(t,Table1,

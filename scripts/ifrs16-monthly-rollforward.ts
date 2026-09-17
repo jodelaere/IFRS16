@@ -83,9 +83,9 @@ const SHEET_DETAILS = 'Mvt Schedule Details'
 /** BUILDINGS - NEW: spill formula in A19, spanning A..L, capped at row 200. */
 /** The three contract tables, stacked down column A. Sizes match the setup script. */
 const DETAILS_BLOCKS = [
-  { firstRow: 19, rowCount: 200, columnCount: 14 },
-  { firstRow: 222, rowCount: 120, columnCount: 11 },
-  { firstRow: 345, rowCount: 120, columnCount: 5 },
+  { firstRow: 19, rowCount: 60, columnCount: 14 },
+  { firstRow: 82, rowCount: 60, columnCount: 11 },
+  { firstRow: 145, rowCount: 60, columnCount: 5 },
 ]
 
 /** The terminated-set snapshot: A holds this month's, D/E last month's. */

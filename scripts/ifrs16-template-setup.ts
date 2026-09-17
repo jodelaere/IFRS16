@@ -56,22 +56,25 @@ const DETAILS_FIRST_PH_ROW = 3
 const DETAILS_PH_COUNT = 12
 
 /**
- * The three contract tables, stacked down column A the way the hand-built sheet
- * had them, each a spill with its own reserved run of rows.
+ * The three contract tables, stacked tight down column A the way the hand-built
+ * sheet had them: you should see all three by scrolling once, not by hunting.
  *
- * The reservations are sized on the real spread, not on a guess. Buildings
- * commencing in one month ran to 131 in January 2026; contracts ending in one
- * month ran to 66 in December 2026. A spill that outgrows its block hits the
- * next header and turns into #SPILL! in the middle of a close, so NEW gets 200
- * rows and the other two 120 — roughly half as much again as anything seen.
+ * Each is a spill, so each needs empty rows beneath it — a spill that reaches
+ * the next header turns into #SPILL!. 60 rows apiece is the compromise. Monthly
+ * intake of buildings ran 6 to 30 across 2025 and most of 2026, and endings 11
+ * to 66, so 60 covers everything normal with room to spare.
  *
- * The setup script reports each block's height and its headroom, so the margin
- * is visible rather than assumed.
+ * It is not unbounded. January 2026 had 131 new buildings in one month — a
+ * one-off load, not a January pattern (January 2025 had 29) — and December 2026
+ * has 66 endings. A month like that overflows its block, which shows as
+ * #SPILL! rather than as a wrong number. The fix is to raise rowCount here and
+ * re-run; the script prints each block's height and spare rows so the margin is
+ * visible before it bites.
  */
 const DETAILS_BLOCKS = {
-  brandNew: { headerRow: 18, firstRow: 19, rowCount: 200, columnCount: 14 },
-  terminated: { headerRow: 221, firstRow: 222, rowCount: 120, columnCount: 11 },
-  reinstated: { headerRow: 344, firstRow: 345, rowCount: 120, columnCount: 5 },
+  brandNew: { headerRow: 18, firstRow: 19, rowCount: 60, columnCount: 14 },
+  terminated: { headerRow: 81, firstRow: 82, rowCount: 60, columnCount: 11 },
+  reinstated: { headerRow: 144, firstRow: 145, rowCount: 60, columnCount: 5 },
 }
 
 /** Kept for the formulas that name it. */

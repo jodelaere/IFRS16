@@ -109,9 +109,9 @@ outputtabellen opnieuw opbouwen voordat de pivots er iets aan hebben.
 | `Movement schedule` G1 / G17 | de nieuwe maand |
 | `Mvt Schedule Details` B1 / E1 | `mvt P{nn}` van de nieuwe maand |
 | `Mvt Schedule Details` A19 | de nieuwe contracten van deze maand |
-| `Mvt Schedule Details` A222 | de contracten die deze maand zijn stopgezet |
-| `Mvt Schedule Details` A345 | de contracten die vorige maand stopgezet waren en nu verlengd |
-| K220 − E343 | moet gelijk zijn aan `Movement schedule` S15, met omgekeerd teken |
+| `Mvt Schedule Details` A82 | de contracten die deze maand zijn stopgezet |
+| `Mvt Schedule Details` A145 | de contracten die vorige maand stopgezet waren en nu verlengd |
+| K80 − E143 | moet gelijk zijn aan `Movement schedule` S15, met omgekeerd teken |
 | `Movement schedule` R + S + T | moet optellen tot kolom P, op elke rij |
 
 Staat er een verschil in kolom J, dan is de plug in kolom L nog niet goed gezet
@@ -154,8 +154,8 @@ samen tellen ze terug op tot P. Dezelfde splitsing staat op
 
 Wil je weten wélke contracten er deze maand bijgekomen of afgelopen zijn: dan
 staan er drie tabellen onder elkaar in kolom A van `Mvt Schedule Details`:
-**BUILDINGS - NEW** vanaf rij 19, **BUILDINGS - TERMINATED** vanaf rij 222 en
-**BUILDINGS - REINSTATED** vanaf rij 345, elk met een teller boven de kop. Die laatste twee zijn het
+**BUILDINGS - NEW** vanaf rij 19, **BUILDINGS - TERMINATED** vanaf rij 82 en
+**BUILDINGS - REINSTATED** vanaf rij 145, elk met een teller boven de kop. Die laatste twee zijn het
 verschil met de lijst van vorige maand, niet met de kalender: een contract dat
 vorige maand als stopgezet stond en nu een einddatum in 2029 heeft, komt in
 REINSTATED. Samen verklaren ze kolom S volledig.
