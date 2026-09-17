@@ -163,6 +163,17 @@ const SNAPSHOT_NOTE = [
   'ÉÉN HANDELING PER MAAND: kopieer A en B naar D en E als waarden, vóórdat je de nieuwe Anaplan-export inplakt.',
 ]
 
+/**
+ * Column formats for BUILDINGS - REINSTATED.
+ *
+ * Every block borrows its look from BUILDINGS - NEW column for column, which
+ * works for TERMINATED because it opens with the same eleven columns in the
+ * same order. REINSTATED does not: its B and E hold dates where NEW has Entity
+ * and the end-date selection, both text. Without this the two dates came out
+ * as 46234 and 47149.
+ */
+const DETAILS_BACK_FORMATS = ['General', 'dd/mm/yyyy', 'General', 'General', 'dd/mm/yyyy']
+
 const DETAILS_BACK_HEADERS = [
   'BUILDINGS - REINSTATED',
   'Reasonably certain end date last month',
@@ -1098,6 +1109,7 @@ function applyReinstatedBuildings(workbook: ExcelScript.Workbook): string {
     headers: DETAILS_BACK_HEADERS,
     countLabelColumn: 'D',
     countColumn: 'E',
+    numberFormats: DETAILS_BACK_FORMATS,
     formula:
       '=LET(t,Table1,' +
       `prior,${priorKeyRange()},priorEnd,${priorEndRange()},` +
@@ -1128,6 +1140,8 @@ function applyContractBlock(
   spec: {
     block: { headerRow: number; firstRow: number; rowCount: number; columnCount: number }
     headers: string[]
+    /** Per-column overrides, where the block's columns differ from NEW's. */
+    numberFormats?: string[]
     countLabelColumn: string
     countColumn: string
     formula: string
@@ -1157,6 +1171,12 @@ function applyContractBlock(
   spec.headers.forEach((header, index) => {
     sheet.getRangeByIndexes(block.headerRow - 1, index, 1, 1).setValue(header)
   })
+  if (spec.numberFormats) {
+    // Set on the first data row, before the styling step tiles that row down.
+    spec.numberFormats.forEach((format, index) => {
+      sheet.getRangeByIndexes(block.firstRow - 1, index, 1, 1).setNumberFormat(format)
+    })
+  }
 
   sheet.getRange(`A${block.firstRow}`).setFormula(spec.formula)
 
