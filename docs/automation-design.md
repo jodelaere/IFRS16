@@ -129,10 +129,16 @@ zijn hele spill-kolommen.
 
 ### L. BUILDINGS - TERMINATED
 
-Naast BUILDINGS - NEW, vanaf `P19`, met dezelfde elf kolommen (een beëindigd
-contract heeft geen lease liability). Naast en niet eronder: de NEW-spill
-reserveert 182 rijen, en zodra een maand er meer oplevert zouden de twee
-tabellen op elkaar botsen met `#SPILL!`.
+Onder BUILDINGS - NEW in kolom A, met dezelfde elf kolommen (een beëindigd
+contract heeft geen lease liability). Daaronder BUILDINGS - REINSTATED.
+
+De reserveringen zijn op de echte spreiding gemaakt, niet gegokt: gebouwen die
+in één maand ingaan liepen op tot **131** in januari 2026, contracten die in één
+maand aflopen tot **66** in december 2026. Een spill die zijn blok uitgroeit
+raakt de volgende kop en wordt `#SPILL!` midden in een afsluiting. Vandaar 200
+rijen voor NEW en 120 voor de andere twee — ruim de helft meer dan ooit gezien.
+Het script meldt per blok hoeveel rijen gevuld zijn en hoeveel er over zijn, dus
+de marge is zichtbaar in plaats van aangenomen.
 
 ```
 =LET(t,Table1,

@@ -54,11 +54,28 @@ const TRANSFER_OUT_RANGE = '$B$68:$B$77'
 
 const DETAILS_FIRST_PH_ROW = 3
 const DETAILS_PH_COUNT = 12
-const DETAILS_NEW_FIRST_ROW = 19
-/** Rows reserved for the spill: cleared, and formatted so it never lands bare. */
-const DETAILS_SPILL_LAST_ROW = 200
 
-/** BUILDINGS - NEW spans A..N since change K split the liability. */
+/**
+ * The three contract tables, stacked down column A the way the hand-built sheet
+ * had them, each a spill with its own reserved run of rows.
+ *
+ * The reservations are sized on the real spread, not on a guess. Buildings
+ * commencing in one month ran to 131 in January 2026; contracts ending in one
+ * month ran to 66 in December 2026. A spill that outgrows its block hits the
+ * next header and turns into #SPILL! in the middle of a close, so NEW gets 200
+ * rows and the other two 120 — roughly half as much again as anything seen.
+ *
+ * The setup script reports each block's height and its headroom, so the margin
+ * is visible rather than assumed.
+ */
+const DETAILS_BLOCKS = {
+  brandNew: { headerRow: 18, firstRow: 19, rowCount: 200, columnCount: 14 },
+  terminated: { headerRow: 221, firstRow: 222, rowCount: 120, columnCount: 11 },
+  reinstated: { headerRow: 344, firstRow: 345, rowCount: 120, columnCount: 5 },
+}
+
+/** Kept for the formulas that name it. */
+const DETAILS_NEW_FIRST_ROW = 19
 const DETAILS_COLUMN_COUNT = 14
 
 /** Movement schedule: buildings rows 3-14, vehicles 19-30, group total one below. */
@@ -143,8 +160,6 @@ const SNAPSHOT_NOTE = [
   'ÉÉN HANDELING PER MAAND: kopieer A en B naar D en E als waarden, vóórdat je de nieuwe Anaplan-export inplakt.',
 ]
 
-/** BUILDINGS - REINSTATED, past the terminated block. */
-const DETAILS_BACK_FIRST_COLUMN_INDEX = 27 // AB
 const DETAILS_BACK_HEADERS = [
   'BUILDINGS - REINSTATED',
   'Reasonably certain end date last month',
@@ -362,19 +377,7 @@ const PRIOR_TERMINATED_SEED: string[][] = [
   ['2221__BZ-98', '2026-05-31'],
 ]
 
-/** Change J columns on Mvt Schedule Details: buildings G/H, vehicles J/K. */
-/**
- * Change L: BUILDINGS - TERMINATED, beside the NEW table rather than below it.
- *
- * Below would have to clear the 182 rows the NEW spill reserves, and the moment
- * a month produced more contracts than that reservation the two would collide
- * with #SPILL!. Side by side, neither can ever reach the other.
- *
- * Eleven columns, the same eleven the NEW table opens with — a terminated
- * contract has no lease liability to add.
- */
-const DETAILS_OUT_FIRST_COLUMN_INDEX = 15 // P
-const DETAILS_OUT_COLUMN_COUNT = 11 // P..Z
+/** BUILDINGS - TERMINATED: the same eleven columns the NEW table opens with. */
 const DETAILS_OUT_HEADERS = [
   'BUILDINGS - TERMINATED',
   'Entity',
@@ -389,6 +392,7 @@ const DETAILS_OUT_HEADERS = [
   'Leased capacity',
 ]
 
+/** Change J columns on Mvt Schedule Details: buildings G/H, vehicles J/K. */
 const DETAILS_SPLIT_BLOCKS = [
   { columns: ['G', 'H', 'I'], movementFirstRow: 3 },
   { columns: ['J', 'K', 'L'], movementFirstRow: 19 },
@@ -620,9 +624,9 @@ function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
   // The old static rows and total must go first, or the spill has nowhere to
   // land. Row 19 keeps its formatting: it is the template every spilled row is
   // styled from.
-  const spillRowCount = DETAILS_SPILL_LAST_ROW - DETAILS_NEW_FIRST_ROW + 1
+  const block = DETAILS_BLOCKS.brandNew
   sheet
-    .getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, 0, spillRowCount, DETAILS_COLUMN_COUNT)
+    .getRangeByIndexes(block.firstRow - 1, 0, block.rowCount, block.columnCount)
     .clear(ExcelScript.ClearApplyTo.contents)
 
   // Change K: the liability also splits into non-current and current.
@@ -682,7 +686,7 @@ function applyNewBuildingsSpill(workbook: ExcelScript.Workbook): string {
     total.getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeBottom).setStyle(ExcelScript.BorderLineStyle.double)
   })
 
-  const styled = styleSpillBlock(workbook, 0, DETAILS_COLUMN_COUNT)
+  const styled = styleSpillBlock(workbook, DETAILS_BLOCKS.brandNew)
   return (
     'H+K: BUILDINGS - NEW spills from Table1 for the reporting month, liability split into ' +
     `non-current and current; totals in L17/M17/N17, ${styled} row(s) styled.`
@@ -910,19 +914,12 @@ function applyDetailsSplit(workbook: ExcelScript.Workbook): string {
  */
 function styleSpillBlock(
   workbook: ExcelScript.Workbook,
-  firstColumnIndex: number,
-  columnCount: number
+  block: { headerRow: number; firstRow: number; rowCount: number; columnCount: number }
 ): number {
   const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
-
-  // The spill was just written or just refreshed; read it after a recalculation
-  // or the row count below is the previous month's.
   workbook.getApplication().calculate(ExcelScript.CalculationType.full)
 
-  const reserved = DETAILS_SPILL_LAST_ROW - DETAILS_NEW_FIRST_ROW + 1
-  const keys = sheet
-    .getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, firstColumnIndex, reserved, 1)
-    .getValues()
+  const keys = sheet.getRangeByIndexes(block.firstRow - 1, 0, block.rowCount, 1).getValues()
   let filled = 0
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i][0]
@@ -932,22 +929,18 @@ function styleSpillBlock(
 
   if (filled > 1) {
     sheet
-      .getRangeByIndexes(DETAILS_NEW_FIRST_ROW, firstColumnIndex, filled - 1, columnCount)
+      .getRangeByIndexes(block.firstRow, 0, filled - 1, block.columnCount)
       .copyFrom(
-        sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, firstColumnIndex, 1, columnCount),
+        sheet.getRangeByIndexes(block.firstRow - 1, 0, 1, block.columnCount),
         ExcelScript.RangeCopyType.formats
       )
   }
 
-  const firstBlankRow = DETAILS_NEW_FIRST_ROW + (filled > 1 ? filled : 1)
-  if (firstBlankRow <= DETAILS_SPILL_LAST_ROW) {
+  const firstBlank = block.firstRow + (filled > 1 ? filled : 1)
+  const lastRow = block.firstRow + block.rowCount - 1
+  if (firstBlank <= lastRow) {
     sheet
-      .getRangeByIndexes(
-        firstBlankRow - 1,
-        firstColumnIndex,
-        DETAILS_SPILL_LAST_ROW - firstBlankRow + 1,
-        columnCount
-      )
+      .getRangeByIndexes(firstBlank - 1, 0, lastRow - firstBlank + 1, block.columnCount)
       .clear(ExcelScript.ClearApplyTo.formats)
   }
 
@@ -962,78 +955,18 @@ function styleSpillBlock(
  * the 17 reinstated reconciles to column S on all twelve PowerHouses.
  */
 function applyTerminatedBuildings(workbook: ExcelScript.Workbook): string {
-  const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
-  const firstColumn = columnLetter(DETAILS_OUT_FIRST_COLUMN_INDEX)
-  const headerRow = DETAILS_NEW_FIRST_ROW - 1
-
-  sheet
-    .getRangeByIndexes(
-      DETAILS_NEW_FIRST_ROW - 1,
-      DETAILS_OUT_FIRST_COLUMN_INDEX,
-      DETAILS_SPILL_LAST_ROW - DETAILS_NEW_FIRST_ROW + 1,
-      DETAILS_OUT_COLUMN_COUNT
-    )
-    .clear(ExcelScript.ClearApplyTo.contents)
-
-  // Borrow the NEW table's header and first data row, column for column, so the
-  // two tables read as one pair rather than as a bolt-on.
-  for (const row of [headerRow, DETAILS_NEW_FIRST_ROW]) {
-    sheet
-      .getRangeByIndexes(row - 1, DETAILS_OUT_FIRST_COLUMN_INDEX, 1, DETAILS_OUT_COLUMN_COUNT)
-      .copyFrom(
-        sheet.getRangeByIndexes(row - 1, 0, 1, DETAILS_OUT_COLUMN_COUNT),
-        ExcelScript.RangeCopyType.formats
-      )
-  }
-  DETAILS_OUT_HEADERS.forEach((header, index) => {
-    sheet.getRangeByIndexes(headerRow - 1, DETAILS_OUT_FIRST_COLUMN_INDEX + index, 1, 1).setValue(header)
+  return applyContractBlock(workbook, {
+    block: DETAILS_BLOCKS.terminated,
+    headers: DETAILS_OUT_HEADERS,
+    countLabelColumn: 'J',
+    countColumn: 'K',
+    formula:
+      '=LET(t,Table1,' +
+      `prior,${priorKeyRange()},` +
+      `keep,${TERMINATED_CONDITION}*ISNA(XMATCH(INDEX(t,,1),prior)),` +
+      'FILTER(CHOOSECOLS(t,1,2,3,6,10,11,14,15,16,26,27),keep,""))',
+    label: 'L: BUILDINGS - TERMINATED',
   })
-
-  // Newly terminated THIS month, which is not the same as "ends this month".
-  // A contract entered late with a July end date counts this month too, and one
-  // that already counted last month does not count again. Set difference
-  // against the snapshot, so this reconciles to Movement schedule column S.
-  const priorKeys =
-    `${SNAPSHOT_SHEET}!$D$${SNAPSHOT_FIRST_DATA_ROW}:$D$${SNAPSHOT_FIRST_DATA_ROW + SNAPSHOT_ROW_COUNT - 1}`
-  sheet.getRange(`${firstColumn}${DETAILS_NEW_FIRST_ROW}`).setFormula(
-    '=LET(t,Table1,' +
-    `keep,${TERMINATED_CONDITION}*ISNA(XMATCH(INDEX(t,,1),${priorKeys})),` +
-    'FILTER(CHOOSECOLS(t,1,2,3,6,10,11,14,15,16,26,27),keep,""))'
-  )
-
-  // Count above the header, for the same reason the NEW totals sit there: a
-  // spill grows and shrinks and would hit anything placed below it.
-  const countLabel = sheet.getRangeByIndexes(16, DETAILS_OUT_FIRST_COLUMN_INDEX - 1, 1, 1)
-  countLabel.setValue('Aantal')
-  countLabel.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.right)
-  countLabel.getFormat().getFont().setBold(true)
-  const count = sheet.getRange(`${firstColumn}17`)
-  count.setFormula(`=SUM(--(CHOOSECOLS(${firstColumn}${DETAILS_NEW_FIRST_ROW}#,1)<>""))`)
-  count.setNumberFormat('#,##0')
-  count.getFormat().getFont().setBold(true)
-
-  // Match the NEW table's column widths rather than inventing new ones.
-  for (let index = 0; index < DETAILS_OUT_COLUMN_COUNT; index++) {
-    const width = sheet.getRangeByIndexes(headerRow - 1, index, 1, 1).getFormat().getColumnWidth()
-    sheet
-      .getRangeByIndexes(headerRow - 1, DETAILS_OUT_FIRST_COLUMN_INDEX + index, 1, 1)
-      .getFormat()
-      .setColumnWidth(width)
-  }
-
-  const styled = styleSpillBlock(workbook, DETAILS_OUT_FIRST_COLUMN_INDEX, DETAILS_OUT_COLUMN_COUNT)
-  return `L: BUILDINGS - TERMINATED spills beside the new ones from ${firstColumn}${DETAILS_NEW_FIRST_ROW}; ${styled} row(s) styled.`
-}
-
-/** 0 -> A, 27 -> AB. */
-function columnLetter(index: number): string {
-  let letters = ''
-  let remaining = index
-  while (remaining >= 0) {
-    letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.charAt(remaining % 26) + letters
-    remaining = Math.floor(remaining / 26) - 1
-  }
-  return letters
 }
 
 /**
@@ -1157,63 +1090,86 @@ function seedPriorTerminated(sheet: ExcelScript.Worksheet, workbook: ExcelScript
  * for readability, and the end date it has now.
  */
 function applyReinstatedBuildings(workbook: ExcelScript.Workbook): string {
+  return applyContractBlock(workbook, {
+    block: DETAILS_BLOCKS.reinstated,
+    headers: DETAILS_BACK_HEADERS,
+    countLabelColumn: 'D',
+    countColumn: 'E',
+    formula:
+      '=LET(t,Table1,' +
+      `prior,${priorKeyRange()},priorEnd,${priorEndRange()},` +
+      `cur,FILTER(INDEX(t,,1),${TERMINATED_CONDITION},""),` +
+      'keep,(prior<>"")*ISNA(XMATCH(prior,cur)),' +
+      'FILTER(HSTACK(prior,priorEnd,' +
+      'XLOOKUP(prior,INDEX(t,,1),INDEX(t,,2),""),' +
+      'XLOOKUP(prior,INDEX(t,,1),INDEX(t,,3),""),' +
+      'XLOOKUP(prior,INDEX(t,,1),INDEX(t,,11),"")),keep,""))',
+    label: 'N: BUILDINGS - REINSTATED',
+  })
+}
+
+function priorKeyRange(): string {
+  return `${SNAPSHOT_SHEET}!$D$${SNAPSHOT_FIRST_DATA_ROW}:$D$${SNAPSHOT_FIRST_DATA_ROW + SNAPSHOT_ROW_COUNT - 1}`
+}
+function priorEndRange(): string {
+  return `${SNAPSHOT_SHEET}!$E$${SNAPSHOT_FIRST_DATA_ROW}:$E$${SNAPSHOT_FIRST_DATA_ROW + SNAPSHOT_ROW_COUNT - 1}`
+}
+
+/**
+ * Lay out one of the stacked contract tables: clear its rows, borrow the NEW
+ * table's header and first-row formatting so all three read as one family, set
+ * the headers, drop in the spill formula and put a count above it.
+ */
+function applyContractBlock(
+  workbook: ExcelScript.Workbook,
+  spec: {
+    block: { headerRow: number; firstRow: number; rowCount: number; columnCount: number }
+    headers: string[]
+    countLabelColumn: string
+    countColumn: string
+    formula: string
+    label: string
+  }
+): string {
   const sheet = workbook.getWorksheet(SETUP_SHEET_DETAILS)
-  const first = columnLetter(DETAILS_BACK_FIRST_COLUMN_INDEX)
-  const headerRow = DETAILS_NEW_FIRST_ROW - 1
-  const width = DETAILS_BACK_HEADERS.length
+  const block = spec.block
+  const template = DETAILS_BLOCKS.brandNew
 
   sheet
-    .getRangeByIndexes(
-      DETAILS_NEW_FIRST_ROW - 1,
-      DETAILS_BACK_FIRST_COLUMN_INDEX,
-      DETAILS_SPILL_LAST_ROW - DETAILS_NEW_FIRST_ROW + 1,
-      width
-    )
-    .clear(ExcelScript.ClearApplyTo.contents)
+    .getRangeByIndexes(block.headerRow - 1, 0, block.rowCount + 1, block.columnCount)
+    .clear(ExcelScript.ClearApplyTo.all)
 
-  for (const row of [headerRow, DETAILS_NEW_FIRST_ROW]) {
-    sheet
-      .getRangeByIndexes(row - 1, DETAILS_BACK_FIRST_COLUMN_INDEX, 1, width)
-      .copyFrom(
-        sheet.getRangeByIndexes(row - 1, 0, 1, width),
-        ExcelScript.RangeCopyType.formats
-      )
-  }
-  DETAILS_BACK_HEADERS.forEach((header, index) => {
-    sheet.getRangeByIndexes(headerRow - 1, DETAILS_BACK_FIRST_COLUMN_INDEX + index, 1, 1).setValue(header)
+  sheet
+    .getRangeByIndexes(block.headerRow - 1, 0, 1, block.columnCount)
+    .copyFrom(
+      sheet.getRangeByIndexes(template.headerRow - 1, 0, 1, block.columnCount),
+      ExcelScript.RangeCopyType.formats
+    )
+  sheet
+    .getRangeByIndexes(block.firstRow - 1, 0, 1, block.columnCount)
+    .copyFrom(
+      sheet.getRangeByIndexes(template.firstRow - 1, 0, 1, block.columnCount),
+      ExcelScript.RangeCopyType.formats
+    )
+  spec.headers.forEach((header, index) => {
+    sheet.getRangeByIndexes(block.headerRow - 1, index, 1, 1).setValue(header)
   })
 
-  const lastRow = SNAPSHOT_FIRST_DATA_ROW + SNAPSHOT_ROW_COUNT - 1
-  const priorKeys = `${SNAPSHOT_SHEET}!$D$${SNAPSHOT_FIRST_DATA_ROW}:$D$${lastRow}`
-  const priorEnds = `${SNAPSHOT_SHEET}!$E$${SNAPSHOT_FIRST_DATA_ROW}:$E$${lastRow}`
-  sheet.getRange(`${first}${DETAILS_NEW_FIRST_ROW}`).setFormula(
-    '=LET(t,Table1,' +
-    `prior,${priorKeys},priorEnd,${priorEnds},` +
-    `cur,FILTER(INDEX(t,,1),${TERMINATED_CONDITION},""),` +
-    'keep,(prior<>"")*ISNA(XMATCH(prior,cur)),' +
-    'FILTER(HSTACK(prior,priorEnd,' +
-    'XLOOKUP(prior,INDEX(t,,1),INDEX(t,,2),""),' +
-    'XLOOKUP(prior,INDEX(t,,1),INDEX(t,,3),""),' +
-    'XLOOKUP(prior,INDEX(t,,1),INDEX(t,,11),"")),keep,""))'
-  )
+  sheet.getRange(`A${block.firstRow}`).setFormula(spec.formula)
 
-  const countLabel = sheet.getRangeByIndexes(16, DETAILS_BACK_FIRST_COLUMN_INDEX - 1, 1, 1)
-  countLabel.setValue('Aantal')
-  countLabel.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.right)
-  countLabel.getFormat().getFont().setBold(true)
-  const count = sheet.getRange(`${first}17`)
-  count.setFormula(`=SUM(--(CHOOSECOLS(${first}${DETAILS_NEW_FIRST_ROW}#,1)<>""))`)
+  // Above the header, like the NEW totals: a spill grows and anything beneath
+  // it would block it.
+  const countRow = block.headerRow - 1
+  const label = sheet.getRange(`${spec.countLabelColumn}${countRow}`)
+  label.setValue('Aantal')
+  label.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.right)
+  label.getFormat().getFont().setBold(true)
+  const count = sheet.getRange(`${spec.countColumn}${countRow}`)
+  count.setFormula(`=SUM(--(CHOOSECOLS(A${block.firstRow}#,1)<>""))`)
   count.setNumberFormat('#,##0')
   count.getFormat().getFont().setBold(true)
 
-  for (let index = 0; index < width; index++) {
-    const source = sheet.getRangeByIndexes(headerRow - 1, index, 1, 1).getFormat().getColumnWidth()
-    sheet
-      .getRangeByIndexes(headerRow - 1, DETAILS_BACK_FIRST_COLUMN_INDEX + index, 1, 1)
-      .getFormat()
-      .setColumnWidth(source)
-  }
-
-  const styled = styleSpillBlock(workbook, DETAILS_BACK_FIRST_COLUMN_INDEX, width)
-  return `N: BUILDINGS - REINSTATED spills from ${first}${DETAILS_NEW_FIRST_ROW}; ${styled} row(s) styled.`
+  const styled = styleSpillBlock(workbook, block)
+  const headroom = block.rowCount - styled
+  return `${spec.label}: rows ${block.firstRow}-${block.firstRow + block.rowCount - 1}, ${styled} filled, ${headroom} spare.`
 }

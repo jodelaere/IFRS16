@@ -81,15 +81,12 @@ const SHEET_ENTITY_LIST_PBI = 'Entity List PowerBI'
 const SHEET_DETAILS = 'Mvt Schedule Details'
 
 /** BUILDINGS - NEW: spill formula in A19, spanning A..L, capped at row 200. */
-const DETAILS_NEW_FIRST_ROW = 19
-const DETAILS_SPILL_LAST_ROW = 200
-const DETAILS_COLUMN_COUNT = 14
-/** BUILDINGS - TERMINATED sits beside it at P, eleven columns wide. */
-const DETAILS_OUT_FIRST_COLUMN_INDEX = 15
-const DETAILS_OUT_COLUMN_COUNT = 11
-/** BUILDINGS - REINSTATED at AB, five columns. */
-const DETAILS_BACK_FIRST_COLUMN_INDEX = 27
-const DETAILS_BACK_COLUMN_COUNT = 5
+/** The three contract tables, stacked down column A. Sizes match the setup script. */
+const DETAILS_BLOCKS = [
+  { firstRow: 19, rowCount: 200, columnCount: 14 },
+  { firstRow: 222, rowCount: 120, columnCount: 11 },
+  { firstRow: 345, rowCount: 120, columnCount: 5 },
+]
 
 /** The terminated-set snapshot: A holds this month's, D/E last month's. */
 const SNAPSHOT_SHEET = 'Snapshot'
@@ -156,9 +153,7 @@ function main(
   shiftPlugColumn(workbook)
 
   refreshQueriesAndPivots(workbook)
-  styleSpillBlock(workbook, 0, DETAILS_COLUMN_COUNT)
-  styleSpillBlock(workbook, DETAILS_OUT_FIRST_COLUMN_INDEX, DETAILS_OUT_COLUMN_COUNT)
-  styleSpillBlock(workbook, DETAILS_BACK_FIRST_COLUMN_INDEX, DETAILS_BACK_COLUMN_COUNT)
+  DETAILS_BLOCKS.forEach((block) => styleSpillBlock(workbook, block))
 
   return buildReviewReport(workbook, params)
 }
@@ -318,16 +313,12 @@ function capturePriorTerminated(workbook: ExcelScript.Workbook) {
  */
 function styleSpillBlock(
   workbook: ExcelScript.Workbook,
-  firstColumnIndex: number,
-  columnCount: number
+  block: { firstRow: number; rowCount: number; columnCount: number }
 ) {
   const sheet = workbook.getWorksheet(SHEET_DETAILS)
   if (!sheet) throw new Error(`Sheet "${SHEET_DETAILS}" not found.`)
 
-  const reserved = DETAILS_SPILL_LAST_ROW - DETAILS_NEW_FIRST_ROW + 1
-  const keys = sheet
-    .getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, firstColumnIndex, reserved, 1)
-    .getValues()
+  const keys = sheet.getRangeByIndexes(block.firstRow - 1, 0, block.rowCount, 1).getValues()
   let filled = 0
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i][0]
@@ -337,22 +328,18 @@ function styleSpillBlock(
 
   if (filled > 1) {
     sheet
-      .getRangeByIndexes(DETAILS_NEW_FIRST_ROW, firstColumnIndex, filled - 1, columnCount)
+      .getRangeByIndexes(block.firstRow, 0, filled - 1, block.columnCount)
       .copyFrom(
-        sheet.getRangeByIndexes(DETAILS_NEW_FIRST_ROW - 1, firstColumnIndex, 1, columnCount),
+        sheet.getRangeByIndexes(block.firstRow - 1, 0, 1, block.columnCount),
         ExcelScript.RangeCopyType.formats
       )
   }
 
-  const firstBlankRow = DETAILS_NEW_FIRST_ROW + (filled > 1 ? filled : 1)
-  if (firstBlankRow <= DETAILS_SPILL_LAST_ROW) {
+  const firstBlank = block.firstRow + (filled > 1 ? filled : 1)
+  const lastRow = block.firstRow + block.rowCount - 1
+  if (firstBlank <= lastRow) {
     sheet
-      .getRangeByIndexes(
-        firstBlankRow - 1,
-        firstColumnIndex,
-        DETAILS_SPILL_LAST_ROW - firstBlankRow + 1,
-        columnCount
-      )
+      .getRangeByIndexes(firstBlank - 1, 0, lastRow - firstBlank + 1, block.columnCount)
       .clear(ExcelScript.ClearApplyTo.formats)
   }
 }
